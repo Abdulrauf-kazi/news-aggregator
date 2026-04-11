@@ -1,5 +1,6 @@
 import type { StoryNode } from "./graph";
 import { getJsonArray, storeJsonArray } from "./redis";
+import { getDb } from "./mongodb";
 
 const STORY_DB_KEY = "news:db:stories";
 const SOURCE_METRICS_DB_KEY = "news:db:source-metrics";
@@ -41,10 +42,30 @@ const toTimestamp = (value: string) => {
 };
 
 export async function readStoredStories(): Promise<StoryNode[]> {
-  const stories = await getJsonArray<StoryNode>(STORY_DB_KEY);
-  return stories
-    .slice()
-    .sort((a, b) => toTimestamp(b.timestamp) - toTimestamp(a.timestamp));
+  const cached = await getJsonArray<StoryNode>(STORY_DB_KEY);
+  if (cached && cached.length > 0) {
+    return cached
+      .slice()
+      .sort((a, b) => toTimestamp(b.timestamp) - toTimestamp(a.timestamp));
+  }
+
+  const db = await getDb();
+  const collection = db.collection<StoryNode>("stories");
+  const dbStories = await collection.find({}).toArray();
+  
+  const formattedStories = dbStories.map(story => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { _id, ...rest } = story as Record<string, unknown>;
+    return rest as StoryNode;
+  });
+
+  const sorted = formattedStories.sort((a, b) => toTimestamp(b.timestamp) - toTimestamp(a.timestamp));
+  
+  if (sorted.length > 0) {
+    await storeJsonArray(STORY_DB_KEY, sorted);
+  }
+  
+  return sorted;
 }
 
 export async function mergeAndStoreStories(
@@ -65,6 +86,21 @@ export async function mergeAndStoreStories(
     .sort((a, b) => toTimestamp(b.timestamp) - toTimestamp(a.timestamp))
     .slice(0, maxStories);
 
+  const db = await getDb();
+  const collection = db.collection<StoryNode>("stories");
+
+  const operations = merged.map((story) => ({
+    updateOne: {
+      filter: { id: story.id },
+      update: { $set: story },
+      upsert: true,
+    }
+  }));
+
+  if (operations.length > 0) {
+    await collection.bulkWrite(operations, { ordered: false });
+  }
+
   await storeJsonArray(STORY_DB_KEY, merged);
   return merged;
 }
@@ -72,22 +108,62 @@ export async function mergeAndStoreStories(
 export async function storeSourceMetrics(
   metrics: SourceIngestionMetric[],
 ): Promise<void> {
+  const db = await getDb();
+  const collection = db.collection<SourceIngestionMetric>("source_metrics");
+  await collection.deleteMany({});
+  if (metrics.length > 0) {
+    await collection.insertMany(metrics);
+  }
   await storeJsonArray(SOURCE_METRICS_DB_KEY, metrics);
 }
 
 export async function readSourceMetrics(): Promise<SourceIngestionMetric[]> {
-  return getJsonArray<SourceIngestionMetric>(SOURCE_METRICS_DB_KEY);
+  const cached = await getJsonArray<SourceIngestionMetric>(SOURCE_METRICS_DB_KEY);
+  if (cached && cached.length > 0) {
+    return cached;
+  }
+
+  const db = await getDb();
+  const collection = db.collection<SourceIngestionMetric>("source_metrics");
+  const metrics = await collection.find({}).toArray();
+  const formatted = metrics.map(m => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
+    const { _id, ...rest } = m as any;
+    return rest as SourceIngestionMetric;
+  });
+  
+  if (formatted.length > 0) {
+    await storeJsonArray(SOURCE_METRICS_DB_KEY, formatted);
+  }
+  return formatted;
 }
 
 export async function storeIngestionReport(
   report: IngestionRunReport,
 ): Promise<void> {
+  const db = await getDb();
+  const collection = db.collection<IngestionRunReport>("ingestion_reports");
+  await collection.insertOne(report);
   await storeJsonArray(INGESTION_REPORT_DB_KEY, [report]);
 }
 
 export async function readIngestionReport(): Promise<IngestionRunReport | null> {
-  const reports = await getJsonArray<IngestionRunReport>(
-    INGESTION_REPORT_DB_KEY,
-  );
-  return reports[0] ?? null;
+  const cached = await getJsonArray<IngestionRunReport>(INGESTION_REPORT_DB_KEY);
+  if (cached && cached.length > 0) {
+    return cached[0] ?? null;
+  }
+
+  const db = await getDb();
+  const collection = db.collection<IngestionRunReport>("ingestion_reports");
+  const report = await collection.find({}).sort({ runAt: -1 }).limit(1).toArray();
+  const result = report[0];
+  
+  if (result) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { _id, ...rest } = result as Record<string, unknown>;
+    const formatted = rest as IngestionRunReport;
+    await storeJsonArray(INGESTION_REPORT_DB_KEY, [formatted]);
+    return formatted;
+  }
+  return null;
 }

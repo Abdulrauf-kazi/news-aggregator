@@ -9,6 +9,7 @@ export type StoryNode = {
   sourceIds: string[];
   timestamp: string;
   embedding?: number[];
+  url?: string;
 };
 
 export type GraphNode = {

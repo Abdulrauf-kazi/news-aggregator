@@ -15,14 +15,17 @@ type PositionedEdge = d3.SimulationLinkDatum<PositionedNode> & GraphEdge;
 export function NewsGraph({
   nodes,
   edges,
+  onNodeClick,
 }: {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  onNodeClick?: (nodeId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dimensions, setDimensions] = useState({ width: 980, height: 560 });
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [showLabels, setShowLabels] = useState(false);
   
   const simulationRef = useRef<d3.Simulation<PositionedNode, PositionedEdge> | null>(null);
   const dataRef = useRef<{ nodes: PositionedNode[]; edges: PositionedEdge[] }>({ nodes: [], edges: [] });
@@ -32,6 +35,7 @@ export function NewsGraph({
   const isDraggingRef = useRef(false);
   const draggedNodeRef = useRef<PositionedNode | null>(null);
   const lastPointerRef = useRef({ x: 0, y: 0 });
+  const pointerDownMetaRef = useRef({ x: 0, y: 0, time: 0 });
 
   const getLinkEndpointId = (endpoint: string | number | PositionedNode): string => {
     if (typeof endpoint === "string") return endpoint;
@@ -272,8 +276,8 @@ export function NewsGraph({
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
 
-        // Render Tooltip / Label for hovered nodes
-        if (isDirectlyActive) {
+        // Render Tooltip / Label for hovered nodes or if showLabels is enabled
+        if (isDirectlyActive || showLabels) {
           const fontSize = 12 / transform.k;
           ctx.font = `bold ${fontSize}px 'IBM Plex Mono', monospace`;
           const label = node.label.length > 40 ? `${node.label.slice(0, 40)}...` : node.label;
@@ -294,12 +298,12 @@ export function NewsGraph({
           ctx.shadowBlur = 0;
           
           // Tooltip Border
-          ctx.strokeStyle = "#e7e5e4";
+          ctx.strokeStyle = isDirectlyActive ? "#ff3e00" : "#e7e5e4";
           ctx.lineWidth = 1 / transform.k;
           ctx.stroke();
           
           // Tooltip Text
-          ctx.fillStyle = "#0a0a0a";
+          ctx.fillStyle = isDirectlyActive ? "#ff3e00" : "#0a0a0a";
           ctx.fillText(label, boxX + padX, boxY + fontSize + padY - 2/transform.k);
         }
       });
@@ -310,7 +314,7 @@ export function NewsGraph({
 
     render();
     return () => window.cancelAnimationFrame(animationFrameId);
-  }, [dimensions, hoveredNodeId]);
+  }, [dimensions, hoveredNodeId, showLabels]);
 
   // Coordinate math
   const screenToWorld = useCallback((x: number, y: number) => {
@@ -418,11 +422,44 @@ export function NewsGraph({
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     e.currentTarget.releasePointerCapture(e.pointerId);
     isDraggingRef.current = false;
+    
     if (draggedNodeRef.current) {
       draggedNodeRef.current.fx = null;
       draggedNodeRef.current.fy = null;
       draggedNodeRef.current = null;
       if (simulationRef.current) simulationRef.current.alphaTarget(0.02);
+    }
+
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (rect) {
+      const clientX = e.clientX - rect.left;
+      const clientY = e.clientY - rect.top;
+      const dx = clientX - pointerDownMetaRef.current.x;
+      const dy = clientY - pointerDownMetaRef.current.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const time = Date.now() - pointerDownMetaRef.current.time;
+
+      if (dist < 5 && time < 300) {
+        const worldPos = screenToWorld(clientX, clientY);
+        const { nodes } = dataRef.current;
+        const transform = transformRef.current;
+        let clickedNodeId: string | null = null;
+        let minDistance = 20 / transform.k;
+
+        for (const node of nodes) {
+          if (node.x == null || node.y == null) continue;
+          const ndx = node.x - worldPos.x;
+          const ndy = node.y - worldPos.y;
+          const ndist = Math.sqrt(ndx * ndx + ndy * ndy);
+          if (ndist < minDistance) {
+            minDistance = ndist;
+            clickedNodeId = node.id;
+          }
+        }
+        if (clickedNodeId && onNodeClick) {
+          onNodeClick(clickedNodeId);
+        }
+      }
     }
   };
 
@@ -446,8 +483,15 @@ export function NewsGraph({
         </div>
       </div>
 
-      <div className="absolute top-5 right-5 z-20 flex flex-col items-end gap-2 pointer-events-none">
-        <div className="px-3 py-1.5 bg-white/90 border border-[#d6d3d1] rounded-md shadow-sm backdrop-blur-md">
+      <div className="absolute top-5 right-5 z-20 flex flex-col items-end gap-2 pointer-events-auto">
+        <button
+          onClick={() => setShowLabels(!showLabels)}
+          className="px-3 py-1.5 bg-white/90 border border-[#d6d3d1] rounded-md shadow-sm backdrop-blur-md text-[9px] font-headline uppercase tracking-wider text-secondary hover:text-primary hover:border-primary transition-colors flex items-center gap-2"
+        >
+          <span className={`w-2 h-2 rounded-full ${showLabels ? 'bg-accent' : 'bg-[#d6d3d1]'}`}></span>
+          {showLabels ? 'Hide Labels' : 'Show Labels'}
+        </button>
+        <div className="px-3 py-1.5 bg-white/90 border border-[#d6d3d1] rounded-md shadow-sm backdrop-blur-md pointer-events-none">
           <span className="text-[9px] font-headline uppercase tracking-wider text-primary font-bold">
             {activeNode ? `Focus: ${activeNode.label.slice(0, 20)}...` : "Global Trajectory"}
           </span>

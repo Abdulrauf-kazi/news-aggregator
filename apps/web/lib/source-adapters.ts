@@ -133,6 +133,7 @@ const createStory = (
   timestamp?: string,
   extraSourceIds: string[] = [],
   content?: string,
+  url?: string,
 ): StoryNode => {
   const normalizedTitle = cleanText(title || `Signal from ${sourceId}`);
   return {
@@ -143,6 +144,7 @@ const createStory = (
     score: scoreFromText(normalizedTitle, extraSourceIds.length + 1),
     sourceIds: [sourceId, ...extraSourceIds],
     timestamp: timestamp ?? new Date().toISOString(),
+    url,
   };
 };
 
@@ -484,7 +486,7 @@ const fetchGenericStories = async (
   source: SourceDefinition,
 ): Promise<StoryNode[]> => {
   try {
-    const payload = await requestJson<any>(source.endpoint, {
+    const payload = await requestJson<Record<string, unknown> | unknown[]>(source.endpoint, {
       headers: {
         "User-Agent": "news-aggregator",
         Accept: "application/json,text/plain,*/*",
@@ -492,9 +494,9 @@ const fetchGenericStories = async (
     });
 
     // Try to find an array in the payload
-    let items: any[] = [];
+    let items: Record<string, unknown>[] = [];
     if (Array.isArray(payload)) {
-      items = payload;
+      items = payload as Record<string, unknown>[];
     } else if (typeof payload === "object" && payload !== null) {
       // Common wrappers: data, items, results, articles, events, states
       const keys = ["data", "items", "results", "articles", "events", "states", "releases", "alerts", "features"];
@@ -525,11 +527,16 @@ const fetchGenericStories = async (
         // Try to find timestamp
         const ts = item.timestamp || item.created_at || item.published || item.time || item.date || item.period;
 
+        const url = item.url || item.link || item.guid || undefined;
+
         return createStory(
           source.id,
           `${id}`,
           typeof title === 'string' ? title : JSON.stringify(title).slice(0, 100),
-          toIsoTimestamp(ts)
+          toIsoTimestamp(ts as string | number | undefined),
+          [],
+          item.content || item.summary || item.description || undefined,
+          url
         );
       });
     }
