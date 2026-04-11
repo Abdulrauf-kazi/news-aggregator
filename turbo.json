@@ -1,6 +1,23 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
+  "globalEnv": [
+    "REDIS_URL",
+    "SESSION_TTL_SECONDS",
+    "SESSION_SOFT_DECAY_WINDOW_SECONDS",
+    "S3_BUCKET",
+    "AWS_REGION",
+    "S3_PREFIX",
+    "GRAPH_CACHE_TTL_SECONDS",
+    "TIME_DECAY_LAMBDA",
+    "EXPLORATION_INJECTION_RATE",
+    "EMBEDDING_MODEL",
+    "EMBEDDING_DIM",
+    "EMBEDDING_CACHE_TTL_SECONDS",
+    "HUGGINGFACE_API_KEY",
+    "VECTOR_SEARCH_TOP_K",
+    "FINNHUB_API_KEY"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
