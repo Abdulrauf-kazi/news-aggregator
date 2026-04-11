@@ -1,3 +1,4 @@
+import typography from "@tailwindcss/typography";
 import type { Config } from "tailwindcss";
 
 const config: Config = {
@@ -20,11 +21,12 @@ const config: Config = {
         "surface-container-highest": "#e1e3e4",
       },
       fontFamily: {
-        headline: ["Manrope", "sans-serif"],
-        body: ["Inter", "sans-serif"],
+        headline: ["IBM Plex Sans", "sans-serif"],
+        body: ["IBM Plex Sans", "sans-serif"],
+        mono: ["IBM Plex Mono", "monospace"],
       },
     },
   },
-  plugins: [],
+  plugins: [typography],
 };
 export default config;

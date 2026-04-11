@@ -48,9 +48,13 @@ export function NewsGraph({
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
-      const nextWidth = Math.max(520, Math.round(entry.contentRect.width));
-      const nextHeight = Math.max(420, Math.round(nextWidth * 0.56));
-      setDimensions({ width: nextWidth, height: nextHeight });
+      const { width, height } = entry.contentRect;
+      const nextWidth = Math.max(10, Math.round(width));
+      const nextHeight = Math.max(10, Math.round(height));
+      setDimensions(prev => {
+        if (prev.width === nextWidth && prev.height === nextHeight) return prev;
+        return { width: nextWidth, height: nextHeight };
+      });
     });
     observer.observe(containerRef.current);
     return () => observer.disconnect();
@@ -276,35 +280,40 @@ export function NewsGraph({
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
 
-        // Render Tooltip / Label for hovered nodes or if showLabels is enabled
-        if (isDirectlyActive || showLabels) {
-          const fontSize = 12 / transform.k;
-          ctx.font = `bold ${fontSize}px 'IBM Plex Mono', monospace`;
+        // Render Tooltip / Label for hovered nodes, their neighbors, or if showLabels is enabled
+        if (isDirectlyActive || isNeighborActive || showLabels) {
+          const fontSize = (isDirectlyActive ? 12 : 10) / transform.k;
+          ctx.font = `${isDirectlyActive ? 'bold' : '500'} ${fontSize}px 'IBM Plex Mono', monospace`;
           const label = node.label.length > 40 ? `${node.label.slice(0, 40)}...` : node.label;
           const textWidth = ctx.measureText(label).width;
           
-          const padX = 10 / transform.k;
-          const padY = 6 / transform.k;
-          const boxX = node.x + 16 / transform.k;
-          const boxY = node.y - 20 / transform.k;
+          const padX = 8 / transform.k;
+          const padY = 4 / transform.k;
+          const boxX = node.x + (isDirectlyActive ? 16 : 12) / transform.k;
+          const boxY = node.y - (isDirectlyActive ? 20 : 16) / transform.k;
           
           // Tooltip Background
-          ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
-          ctx.shadowBlur = 12 / transform.k;
+          ctx.fillStyle = isDirectlyActive ? "rgba(255, 255, 255, 0.98)" : "rgba(255, 255, 255, 0.85)";
+          ctx.shadowBlur = (isDirectlyActive ? 12 : 4) / transform.k;
           ctx.shadowColor = "rgba(0,0,0,0.08)";
           ctx.beginPath();
-          ctx.roundRect(boxX, boxY, textWidth + padX * 2, fontSize + padY * 2, 6 / transform.k);
+          ctx.roundRect(boxX, boxY, textWidth + padX * 2, fontSize + padY * 2, 4 / transform.k);
           ctx.fill();
           ctx.shadowBlur = 0;
           
           // Tooltip Border
-          ctx.strokeStyle = isDirectlyActive ? "#ff3e00" : "#e7e5e4";
-          ctx.lineWidth = 1 / transform.k;
+          if (isDirectlyActive) {
+            ctx.strokeStyle = "#ff3e00";
+            ctx.lineWidth = 1.5 / transform.k;
+          } else {
+            ctx.strokeStyle = "#d6d3d1";
+            ctx.lineWidth = 1 / transform.k;
+          }
           ctx.stroke();
           
           // Tooltip Text
-          ctx.fillStyle = isDirectlyActive ? "#ff3e00" : "#0a0a0a";
-          ctx.fillText(label, boxX + padX, boxY + fontSize + padY - 2/transform.k);
+          ctx.fillStyle = isDirectlyActive ? "#ff3e00" : "#475e8b";
+          ctx.fillText(label, boxX + padX, boxY + fontSize + padY - 1/transform.k);
         }
       });
 
@@ -468,7 +477,7 @@ export function NewsGraph({
   return (
     <div
       ref={containerRef}
-      className="w-full h-full min-h-[400px] relative overflow-hidden bg-[#f5f5f4] rounded-2xl border border-[#d6d3d1] shadow-inner"
+      className="w-full h-full relative overflow-hidden bg-[#f5f5f4] rounded-2xl border border-[#d6d3d1] shadow-inner"
     >
       <div className="absolute top-5 left-5 z-20 pointer-events-none">
         <div className="flex flex-col gap-1">

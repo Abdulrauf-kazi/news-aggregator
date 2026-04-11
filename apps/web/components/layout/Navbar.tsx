@@ -55,9 +55,13 @@ export function Navbar() {
               type="text"
             />
           </div>
-          <div className="text-[11px] uppercase tracking-wider font-semibold text-secondary border border-neutral-400 rounded-md px-2 py-1">
+          <Link 
+            href="/live"
+            className="text-[11px] uppercase tracking-wider font-semibold text-secondary border border-neutral-400 rounded-md px-2 py-1 hover:bg-primary hover:text-white hover:border-primary transition-all cursor-pointer flex items-center gap-1.5"
+          >
+            <span className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse"></span>
             Live
-          </div>
+          </Link>
         </div>
       </div>
     </nav>

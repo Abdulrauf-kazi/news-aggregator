@@ -1,3 +1,4 @@
+import Parser from "rss-parser";
 import {
   createStoryGraphFromRecommendations,
   createStoryGraphFromStories,
@@ -114,6 +115,9 @@ const requestText = async (url: string): Promise<string> => {
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
+      headers: {
+        "User-Agent": "news-aggregator",
+      },
       signal: controller.signal,
       next: { revalidate: 120 },
     });
@@ -136,10 +140,12 @@ const createStory = (
   url?: string,
 ): StoryNode => {
   const normalizedTitle = cleanText(title || `Signal from ${sourceId}`);
+  const cleanedContent = content ? cleanText(content) : undefined;
+  
   return {
     id: `story:${sourceId}:${externalId}`,
     title: normalizedTitle,
-    content: content ? cleanText(content) : normalizedTitle,
+    content: cleanedContent && cleanedContent !== normalizedTitle ? cleanedContent : undefined,
     topic: toTopic(normalizedTitle),
     score: scoreFromText(normalizedTitle, extraSourceIds.length + 1),
     sourceIds: [sourceId, ...extraSourceIds],
@@ -148,32 +154,39 @@ const createStory = (
   };
 };
 
+const rssParser = new Parser();
+
 const fetchRssStories = async (
   source: SourceDefinition,
 ): Promise<StoryNode[]> => {
-  const xml = await requestText(source.endpoint);
-  const itemRegex =
-    /<item>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?(?:<pubDate>(.*?)<\/pubDate>)?[\s\S]*?<\/item>/g;
-  const entries: StoryNode[] = [];
-  let match = itemRegex.exec(xml);
-  let index = 0;
-  while (match && index < STORIES_PER_SOURCE) {
-    const title = cleanText(match[1] ?? "RSS item");
-    const date = match[2]
-      ? new Date(match[2]).toISOString()
-      : new Date().toISOString();
-    entries.push(createStory(source.id, `${index}`, title, date, ["rss2json"]));
-    index += 1;
-    match = itemRegex.exec(xml);
+  try {
+    const feed = await rssParser.parseURL(source.endpoint);
+    return (feed.items || [])
+      .slice(0, STORIES_PER_SOURCE)
+      .map((item, idx) => {
+        const url = item.link || item.guid || (item as any).uri;
+        const content = item.contentSnippet || item.content || item.summary || (item as any).description;
+        return createStory(
+          source.id,
+          item.guid || item.link || `${idx}`,
+          item.title || "RSS item",
+          item.isoDate || item.pubDate,
+          ["rss2json"],
+          content,
+          url
+        );
+      });
+  } catch (e) {
+    console.warn(`RSS fetch failed for ${source.id}:`, e);
+    return [];
   }
-  return entries;
 };
 
 const fetchRss2JsonStories = async (
   source: SourceDefinition,
 ): Promise<StoryNode[]> => {
   const payload = await requestJson<{
-    items?: Array<{ title?: string; pubDate?: string; guid?: string }>;
+    items?: Array<{ title?: string; pubDate?: string; guid?: string; link?: string; description?: string; content?: string }>;
   }>(source.endpoint);
   return (payload.items ?? [])
     .slice(0, STORIES_PER_SOURCE)
@@ -184,6 +197,8 @@ const fetchRss2JsonStories = async (
         item.title ?? "RSS2JSON item",
         item.pubDate ? new Date(item.pubDate).toISOString() : undefined,
         ["rss-atom"],
+        item.description || item.content,
+        item.link
       ),
     );
 };
@@ -208,6 +223,8 @@ const fetchGdeltStories = async (
         article.title ?? "GDELT event",
         toIsoTimestamp(article.seendate),
         ["rss-atom"],
+        undefined,
+        article.url
       ),
     );
 };
@@ -246,7 +263,8 @@ const fetchFinnhubStories = async (
         item.headline ?? "Finnhub market update",
         toIsoTimestamp(item.datetime),
         ["yahoo-finance", "fred"],
-        item.summary ?? item.url,
+        item.summary || item.url,
+        item.url
       ),
     );
 };
@@ -262,7 +280,7 @@ const fetchFredStories = async (
   }api_key=${encodeURIComponent(FRED_API_KEY)}`;
 
   const payload = await requestJson<{
-    releases?: Array<{ id?: string; name?: string; realtime_start?: string }>;
+    releases?: Array<{ id?: string; name?: string; realtime_start?: string; link?: string }>;
   }>(endpoint);
 
   return (payload.releases ?? [])
@@ -274,6 +292,8 @@ const fetchFredStories = async (
         `FRED Release: ${release.name}`,
         release.realtime_start,
         ["finnhub", "yahoo-finance"],
+        undefined,
+        release.link || `https://fred.stlouisfed.org/release?rid=${release.id}`
       ),
     );
 };
@@ -303,6 +323,8 @@ const fetchEiaStories = async (
         `EIA Energy Metric: ${item.region ?? "Global"} power output`,
         item.period,
         ["fred", "finnhub"],
+        undefined,
+        source.endpoint
       ),
     );
 };
@@ -314,7 +336,7 @@ const fetchHackerNewsStories = async (
   const topIds = ids.slice(0, STORIES_PER_SOURCE);
   const items = await Promise.all(
     topIds.map((id) =>
-      requestJson<{ title?: string; time?: number }>(
+      requestJson<{ title?: string; time?: number; url?: string }>(
         `https://hacker-news.firebaseio.com/v0/item/${id}.json`,
       ).catch(() => null),
     ),
@@ -331,6 +353,8 @@ const fetchHackerNewsStories = async (
         item.title ?? `Hacker News ${topIds[idx]}`,
         item.time ? new Date(item.time * 1000).toISOString() : undefined,
         ["github"],
+        undefined,
+        item.url || `https://news.ycombinator.com/item?id=${topIds[idx]}`
       );
     })
     .filter((story): story is StoryNode => Boolean(story));
@@ -343,7 +367,7 @@ const fetchGithubStories = async (
     Array<{
       id: string;
       type: string;
-      repo?: { name?: string };
+      repo?: { name?: string; url?: string };
       created_at?: string;
     }>
   >(source.endpoint, {
@@ -359,6 +383,8 @@ const fetchGithubStories = async (
         `${event.type} on ${event.repo?.name ?? "unknown/repo"}`,
         event.created_at,
         idx % 2 === 0 ? ["hacker-news", "c2intelfeeds"] : ["hacker-news"],
+        undefined,
+        event.repo?.name ? `https://github.com/${event.repo.name}` : undefined
       ),
     );
 };
@@ -372,13 +398,16 @@ const fetchArxivStories = async (
   const entries: StoryNode[] = [];
   let match = entryRegex.exec(xml);
   while (match && entries.length < STORIES_PER_SOURCE) {
+    const url = cleanText(match[1] ?? "");
     entries.push(
       createStory(
         source.id,
-        cleanText(match[1] ?? "arxiv"),
+        url || "arxiv",
         cleanText(match[2] ?? "arXiv paper"),
         new Date(match[3] ?? Date.now()).toISOString(),
         ["hacker-news"],
+        undefined,
+        url
       ),
     );
     match = entryRegex.exec(xml);
@@ -404,6 +433,8 @@ const fetchCoinGeckoStories = async (
         `${coin.item?.name ?? "Asset"} trending in crypto markets`,
         new Date().toISOString(),
         ["yahoo-finance", "finnhub"],
+        undefined,
+        coin.item?.id ? `https://www.coingecko.com/en/coins/${coin.item.id}` : undefined
       ),
     );
 };
@@ -414,7 +445,7 @@ const fetchUsgsStories = async (
   const payload = await requestJson<{
     features?: Array<{
       id?: string;
-      properties?: { title?: string; time?: number };
+      properties?: { title?: string; time?: number; url?: string };
     }>;
   }>(source.endpoint);
 
@@ -429,6 +460,8 @@ const fetchUsgsStories = async (
           ? new Date(item.properties.time).toISOString()
           : undefined,
         ["nasa-eonet", "nws"],
+        undefined,
+        item.properties?.url
       ),
     );
 };
@@ -441,6 +474,7 @@ const fetchNasaEonetStories = async (
       id?: string;
       title?: string;
       geometry?: Array<{ date?: string }>;
+      sources?: Array<{ url?: string }>;
     }>;
   }>(source.endpoint);
 
@@ -453,6 +487,8 @@ const fetchNasaEonetStories = async (
         event.title ?? "NASA EONET event",
         event.geometry?.[0]?.date,
         ["usgs", "nws"],
+        undefined,
+        event.sources?.[0]?.url
       ),
     );
 };
@@ -463,7 +499,7 @@ const fetchNwsStories = async (
   const payload = await requestJson<{
     features?: Array<{
       id?: string;
-      properties?: { event?: string; effective?: string };
+      properties?: { event?: string; effective?: string; description?: string };
     }>;
   }>(source.endpoint, {
     headers: { "User-Agent": "news-aggregator" },
@@ -478,6 +514,8 @@ const fetchNwsStories = async (
         alert.properties?.event ?? "NWS active alert",
         alert.properties?.effective,
         ["usgs", "nasa-eonet"],
+        alert.properties?.description,
+        alert.id
       ),
     );
 };
@@ -502,7 +540,7 @@ const fetchGenericStories = async (
       const keys = ["data", "items", "results", "articles", "events", "states", "releases", "alerts", "features"];
       for (const key of keys) {
         if (Array.isArray(payload[key])) {
-          items = payload[key];
+          items = payload[key] as Record<string, unknown>[];
           break;
         }
       }
@@ -510,7 +548,7 @@ const fetchGenericStories = async (
       if (items.length === 0) {
         const firstArray = Object.values(payload).find(v => Array.isArray(v));
         if (Array.isArray(firstArray)) {
-          items = firstArray;
+          items = firstArray as Record<string, unknown>[];
         }
       }
     }
@@ -527,7 +565,7 @@ const fetchGenericStories = async (
         // Try to find timestamp
         const ts = item.timestamp || item.created_at || item.published || item.time || item.date || item.period;
 
-        const url = item.url || item.link || item.guid || undefined;
+        const url = item.url || item.link || item.guid || item.uri || (typeof item === 'string' && (item as string).startsWith('http') ? item : undefined);
 
         return createStory(
           source.id,
@@ -535,8 +573,8 @@ const fetchGenericStories = async (
           typeof title === 'string' ? title : JSON.stringify(title).slice(0, 100),
           toIsoTimestamp(ts as string | number | undefined),
           [],
-          item.content || item.summary || item.description || undefined,
-          url
+          (item.content as string) || (item.summary as string) || (item.description as string) || undefined,
+          url as string | undefined
         );
       });
     }
@@ -643,6 +681,7 @@ const mergeStories = (left: StoryNode, right: StoryNode): StoryNode => {
     sourceIds: mergedSourceIds,
     timestamp: newestTimestamp,
     embedding: mergeEmbeddings(left.embedding, right.embedding),
+    url: left.url || right.url,
   };
 };
 
@@ -728,6 +767,17 @@ const adapters: Partial<
   usgs: fetchUsgsStories,
   "nasa-eonet": fetchNasaEonetStories,
   nws: fetchNwsStories,
+  guardian: fetchRssStories,
+  wsj: fetchRssStories,
+  alarabiya: fetchRssStories,
+  cnn: fetchRssStories,
+  skynews: fetchRssStories,
+  france24: fetchRssStories,
+  aljazeera: fetchRssStories,
+  reuters: fetchRssStories,
+  aajtak: fetchRssStories,
+  bloomberg: fetchRssStories,
+  cnbc: fetchRssStories,
   acled: fetchRssStories,
   ucdp: fetchRssStories,
   unhcr: fetchRssStories,
