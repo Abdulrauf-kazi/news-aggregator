@@ -347,9 +347,14 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
                       {bookmarks.includes(story.id) ? '★' : '☆'}
                     </button>
                   </div>
-                  <h3 className={`font-bold text-primary leading-snug group-hover:text-accent transition-colors ${isHero ? 'text-xl line-clamp-4' : 'text-sm line-clamp-3'}`}>
-                    {story.title}
-                  </h3>
+                  <div>
+                    <h3 className={`font-bold text-primary leading-snug group-hover:text-accent transition-colors ${isHero ? 'text-xl line-clamp-2 mb-2' : 'text-sm line-clamp-2 mb-1'}`}>
+                      {story.title}
+                    </h3>
+                    <p className={`text-secondary text-xs opacity-80 ${isHero ? 'line-clamp-3' : 'line-clamp-2'}`}>
+                      {story.content ? story.content : `New intel regarding ${story.topic} detected from ${story.sourceIds?.join(', ') || 'multiple sources'}. Semantic analysis suggests high relevance to ongoing trends.`}
+                    </p>
+                  </div>
                   <div className="mt-4 flex items-center justify-between opacity-60">
                      <span className="text-[10px] uppercase font-headline">{(story.sourceIds ?? [])[0] ?? 'Feed'}</span>
                      <span className="text-[10px] font-headline">{data.meta.fetchedAt ? new Date(data.meta.fetchedAt).toLocaleTimeString() : 'Now'}</span>

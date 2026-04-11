@@ -36,6 +36,12 @@ export function Navbar() {
             >
               Sources
             </Link>
+            <Link
+              className="text-secondary hover:text-primary transition-colors"
+              href="/bookmarks"
+            >
+              Bookmarks
+            </Link>
           </div>
         </div>
         <div className="flex items-center gap-3">
