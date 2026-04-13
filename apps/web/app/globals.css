@@ -105,10 +105,11 @@ body {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  display: grid;
-  place-items: center;
-  background: rgba(242, 242, 240, 0.92);
-  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245, 245, 244, 0.98);
+  backdrop-filter: blur(8px);
 }
 
 .rabbit-loader-shell {

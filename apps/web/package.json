@@ -17,6 +17,7 @@
     "@types/d3-force": "^3.0.10",
     "cheerio": "^1.2.0",
     "d3-force": "^3.0.0",
+    "framer-motion": "^12.38.0",
     "gsap": "^3.13.0",
     "ioredis": "^5.8.2",
     "isomorphic-dompurify": "^3.8.0",

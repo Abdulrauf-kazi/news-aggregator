@@ -1,233 +1,101 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { gsap } from "gsap";
+import { motion } from "framer-motion";
 
 export function RabbitLoaderScene() {
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!rootRef.current) {
-      return;
-    }
-
-    const ctx = gsap.context(() => {
-      gsap.to(".rb-body", {
-        y: -4,
-        duration: 0.38,
-        repeat: -1,
-        yoyo: true,
-        ease: "sine.inOut",
-      });
-
-      gsap.to(".rb-shadow", {
-        scaleX: 0.88,
-        opacity: 0.2,
-        duration: 0.38,
-        repeat: -1,
-        yoyo: true,
-        ease: "sine.inOut",
-      });
-
-      gsap.to(".rb-ear-a", {
-        rotation: -10,
-        transformOrigin: "50% 90%",
-        duration: 0.36,
-        repeat: -1,
-        yoyo: true,
-        ease: "sine.inOut",
-      });
-
-      gsap.to(".rb-ear-b", {
-        rotation: 8,
-        transformOrigin: "50% 90%",
-        duration: 0.36,
-        repeat: -1,
-        yoyo: true,
-        ease: "sine.inOut",
-      });
-
-      gsap.to(".rb-tail", {
-        scale: 0.94,
-        x: -1,
-        duration: 0.34,
-        repeat: -1,
-        yoyo: true,
-        ease: "sine.inOut",
-      });
-
-      const legPairs = [
-        [".rb-leg-f1", ".rb-leg-b1"],
-        [".rb-leg-f2", ".rb-leg-b2"],
-      ] as const;
-
-      legPairs.forEach(([front, back], index) => {
-        const delay = index * 0.16;
-        gsap.to(front, {
-          rotation: -24,
-          transformOrigin: "50% 0%",
-          duration: 0.28,
-          repeat: -1,
-          yoyo: true,
-          ease: "power1.inOut",
-          delay,
-        });
-        gsap.to(back, {
-          rotation: 20,
-          transformOrigin: "50% 0%",
-          duration: 0.28,
-          repeat: -1,
-          yoyo: true,
-          ease: "power1.inOut",
-          delay,
-        });
-      });
-
-      gsap.to(".rb-ground-track", {
-        backgroundPositionX: -54,
-        duration: 0.74,
-        repeat: -1,
-        ease: "none",
-      });
-
-      gsap.to(".rb-trail", {
-        opacity: 0.08,
-        x: -5,
-        duration: 0.42,
-        repeat: -1,
-        yoyo: true,
-        ease: "sine.inOut",
-      });
-
-      gsap.to(".rb-dot", {
-        y: -1.5,
-        opacity: 0.9,
-        duration: 0.32,
-        repeat: -1,
-        yoyo: true,
-        stagger: 0.08,
-        ease: "sine.inOut",
-      });
-    }, rootRef);
-
-    return () => ctx.revert();
-  }, []);
-
   return (
-    <div
-      ref={rootRef}
-      className="rabbit-loader-shell rabbit-loader-rich rabbit-loader-mini"
-    >
-      <svg
-        className="rabbit-loader-wrap"
-        viewBox="0 0 260 170"
-        aria-hidden="true"
-      >
-        <g className="rb-trail" opacity="0.14">
-          <ellipse cx="108" cy="94" rx="44" ry="28" fill="#d0d3d8" />
-        </g>
+    <div className="flex flex-col items-center justify-center gap-4">
+      <div className="relative w-24 h-24 flex items-center justify-center">
+        {/* Bouncy Shadow */}
+        <motion.div
+          animate={{
+            scaleX: [1, 1.2, 1],
+            opacity: [0.2, 0.1, 0.2],
+          }}
+          transition={{
+            duration: 0.6,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+          className="absolute bottom-2 w-12 h-2 bg-primary/20 rounded-full blur-sm"
+        />
 
-        <g className="rb-body">
-          <g className="rb-leg-f1" transform="translate(132 103)">
-            <rect
-              x="-3.6"
-              y="0"
-              width="7.2"
-              height="27"
-              rx="4"
-              fill="#20252f"
+        {/* The Cute Rabbit */}
+        <motion.div
+          animate={{
+            y: [0, -20, 0],
+            rotate: [0, -5, 5, 0],
+          }}
+          transition={{
+            duration: 0.6,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+          className="relative z-10 w-16 h-16"
+        >
+          <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-sm">
+            {/* Ears */}
+            <motion.path
+              d="M30,30 Q20,0 40,15 Q35,30 30,30"
+              fill="#022448"
+              animate={{ rotate: [-10, 10, -10] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+              style={{ transformOrigin: "30px 30px" }}
             />
-            <ellipse cx="0" cy="28" rx="6" ry="3.4" fill="#5a6270" />
-          </g>
-          <g className="rb-leg-f2" transform="translate(150 100)">
-            <rect
-              x="-3.6"
-              y="0"
-              width="7.2"
-              height="27"
-              rx="4"
-              fill="#20252f"
+            <motion.path
+              d="M50,25 Q60,-5 70,20 Q60,35 50,25"
+              fill="#022448"
+              animate={{ rotate: [10, -10, 10] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+              style={{ transformOrigin: "50px 25px" }}
             />
-            <ellipse cx="0" cy="28" rx="6" ry="3.4" fill="#5a6270" />
-          </g>
-          <g className="rb-leg-b1" transform="translate(88 103)">
-            <rect
-              x="-3.8"
-              y="0"
-              width="7.6"
-              height="28"
-              rx="4"
-              fill="#20252f"
+            
+            {/* Body */}
+            <circle cx="50" cy="60" r="30" fill="#022448" />
+            
+            {/* Eyes */}
+            <motion.circle 
+              cx="40" cy="55" r="3" fill="white" 
+              animate={{ scaleY: [1, 0.1, 1] }}
+              transition={{ duration: 2, repeat: Infinity, times: [0, 0.1, 0.2] }}
             />
-            <ellipse cx="0" cy="29" rx="6.2" ry="3.5" fill="#5a6270" />
-          </g>
-          <g className="rb-leg-b2" transform="translate(104 101)">
-            <rect
-              x="-3.8"
-              y="0"
-              width="7.6"
-              height="28"
-              rx="4"
-              fill="#20252f"
+            <motion.circle 
+              cx="60" cy="55" r="3" fill="white" 
+              animate={{ scaleY: [1, 0.1, 1] }}
+              transition={{ duration: 2, repeat: Infinity, times: [0, 0.1, 0.2] }}
             />
-            <ellipse cx="0" cy="29" rx="6.2" ry="3.5" fill="#5a6270" />
-          </g>
+            
+            {/* Nose */}
+            <path d="M48,65 L52,65 L50,68 Z" fill="#FF6B6B" />
+            
+            {/* Cheeks */}
+            <circle cx="35" cy="65" r="4" fill="#FF6B6B" opacity="0.3" />
+            <circle cx="65" cy="65" r="4" fill="#FF6B6B" opacity="0.3" />
+          </svg>
+        </motion.div>
+      </div>
 
-          <ellipse cx="108" cy="90" rx="44" ry="26" fill="#20252f" />
-          <ellipse
-            cx="97"
-            cy="89"
-            rx="16"
-            ry="10"
-            fill="#5a6270"
-            opacity="0.35"
-          />
-
-          <g className="rb-tail" transform="translate(64 88)">
-            <circle cx="0" cy="0" r="8" fill="#20252f" />
-          </g>
-
-          <circle cx="154" cy="78" r="18" fill="#20252f" />
-          <ellipse
-            cx="160"
-            cy="84"
-            rx="5"
-            ry="3.4"
-            fill="#5a6270"
-            opacity="0.9"
-          />
-          <circle cx="159" cy="74" r="2.1" fill="#0d1117" />
-
-          <g className="rb-ear-a">
-            <ellipse cx="146" cy="50" rx="5.2" ry="18" fill="#20252f" />
-            <ellipse
-              cx="146"
-              cy="52"
-              rx="2.1"
-              ry="11"
-              fill="#636f80"
-              opacity="0.75"
+      <div className="flex flex-col items-center">
+        <p className="font-headline text-[10px] uppercase tracking-[0.2em] text-primary font-bold">
+          Gathering Intel
+        </p>
+        <div className="flex gap-1 mt-1">
+          {[0, 1, 2].map((i) => (
+            <motion.div
+              key={i}
+              animate={{
+                scale: [1, 1.5, 1],
+                opacity: [0.3, 1, 0.3],
+              }}
+              transition={{
+                duration: 1,
+                repeat: Infinity,
+                delay: i * 0.2,
+              }}
+              className="w-1 h-1 bg-accent rounded-full"
             />
-          </g>
-          <g className="rb-ear-b">
-            <ellipse cx="162" cy="49" rx="4.8" ry="16" fill="#20252f" />
-            <ellipse
-              cx="162"
-              cy="51"
-              rx="1.9"
-              ry="10"
-              fill="#636f80"
-              opacity="0.72"
-            />
-          </g>
-        </g>
-      </svg>
-
-      <div className="rb-shadow rabbit-shadow" />
-      <div className="rabbit-ground rb-ground-track" />
-      <div className="rabbit-dots" aria-hidden="true">
-        Loading <i className="rb-dot" /> <i className="rb-dot" />{" "}
-        <i className="rb-dot" />
+          ))}
+        </div>
       </div>
     </div>
   );
