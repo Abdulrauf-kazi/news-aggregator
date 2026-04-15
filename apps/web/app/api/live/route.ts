@@ -27,30 +27,72 @@ export async function GET(request: Request) {
   const forceRefresh = url.searchParams.get("refresh") === "1";
   const sessionId = extractSessionId(request, url) || createSessionId();
 
-  const snapshot = await getGraphSnapshot({
-    forceRefresh,
-    sessionId,
-  });
-
-  const response = NextResponse.json({
-    ...snapshot,
-    meta: {
-      ...snapshot.meta,
-      fetchedAt: new Date().toISOString(),
+  try {
+    const snapshot = await getGraphSnapshot({
+      forceRefresh,
       sessionId,
-    },
-  });
+    });
 
-  response.cookies.set({
-    name: COOKIE_NAME,
-    value: sessionId,
-    path: "/",
-    httpOnly: false,
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7,
-  });
+    const response = NextResponse.json({
+      ...snapshot,
+      meta: {
+        ...snapshot.meta,
+        fetchedAt: new Date().toISOString(),
+        sessionId,
+      },
+    });
 
-  return response;
+    response.cookies.set({
+      name: COOKIE_NAME,
+      value: sessionId,
+      path: "/",
+      httpOnly: false,
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+
+    return response;
+  } catch (error) {
+    console.error("Failed to fetch graph snapshot:", error);
+    try {
+      // Try to get cached data
+      const snapshot = await getGraphSnapshot({ forceRefresh: false, sessionId });
+      return NextResponse.json({
+        ...snapshot,
+        meta: {
+          ...snapshot.meta,
+          error: error instanceof Error ? error.message : "Unknown error",
+          fetchedAt: new Date().toISOString(),
+          sessionId,
+        },
+      });
+    } catch {
+      // Full fallback to generated data if DB/Redis is completely down
+      const { createStoryGraph } = await import("../../../lib/graph");
+      const fallback = createStoryGraph(Date.now());
+      return NextResponse.json({
+        ...fallback,
+        meta: {
+          cached: false,
+          storage: "fallback-hard",
+          plannedArchive: null,
+          totalStoriesInDb: 0,
+          sourceMetricsCount: 0,
+          recommendations: [],
+          recommendationReasons: {},
+          retrieval: {
+            vectorBackend: "none",
+            vectorCount: 0,
+            graphSeedCount: 0,
+            mode: "graph",
+          },
+          error: "System error: Backend services unavailable. Using local simulation.",
+          fetchedAt: new Date().toISOString(),
+          sessionId,
+        },
+      });
+    }
+  }
 }
 
 export async function POST(request: Request) {

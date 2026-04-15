@@ -1,14 +1,17 @@
+import { Suspense } from "react";
 import { LiveHome } from "../components/live-home";
 import { createStoryGraph } from "../lib/graph";
 import { getGraphSnapshot } from "../lib/graph-service";
+import Loading from "./loading";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+async function HomeContent() {
   try {
     const initialData = await getGraphSnapshot();
     return <LiveHome initialData={initialData} />;
-  } catch {
+  } catch (error) {
+    console.error("Failed to fetch initial graph data:", error);
     const fallback = createStoryGraph(42);
     return (
       <LiveHome
@@ -34,4 +37,12 @@ export default async function Home() {
       />
     );
   }
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <HomeContent />
+    </Suspense>
+  );
 }

@@ -109,11 +109,19 @@ export const getRedisClient = (): Redis | null => {
   }
 
   if (!client) {
-    client = new Redis(url, {
-      maxRetriesPerRequest: 1,
-      enableAutoPipelining: true,
-      lazyConnect: true,
-    });
+    try {
+      client = new Redis(url, {
+        maxRetriesPerRequest: 1,
+        enableAutoPipelining: true,
+        lazyConnect: true,
+        connectTimeout: 3000,
+        retryStrategy: () => null, // Don't retry — fall back to memory
+      });
+      // Silently handle connection errors (falls back to in-memory store)
+      client.on("error", () => {});
+    } catch {
+      return null;
+    }
   }
 
   return client;

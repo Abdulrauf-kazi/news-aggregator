@@ -15,7 +15,7 @@ const GRAPH_CACHE_TTL_SECONDS = Number(
 );
 const TIME_DECAY_LAMBDA = Number(process.env.TIME_DECAY_LAMBDA ?? 0.08);
 const EXPLORATION_INJECTION_RATE = Number(
-  process.env.EXPLORATION_INJECTION_RATE ?? 0.2,
+  process.env.EXPLORATION_INJECTION_RATE ?? 0.4,
 );
 
 export type GraphSnapshot = StoryGraph & {
@@ -122,13 +122,13 @@ const applyExplorationInjection = (stories: StoryGraph["stories"]) => {
         story,
       ]),
     ).values(),
-  ]).slice(0, 3);
+  ]).slice(0, 10);
 
   if (diverseCandidates.length === 0) {
     return stories;
   }
 
-  const injectionSpots = [3, 7, 11];
+  const injectionSpots = [3, 7, 11, 15, 19, 23, 27, 31, 35, 39];
   const excluded = new Set(diverseCandidates.map((story) => story.id));
   const remaining = base.filter((story) => !excluded.has(story.id));
 
@@ -410,7 +410,7 @@ export async function getGraphSnapshot(options?: {
     const recommendationResult = await buildRetrievalRecommendations({
       graph: rankedGraph,
       startStoryIds: recentSessionStories,
-      topK: 10,
+      topK: 15,
     });
 
     return {
@@ -438,11 +438,11 @@ export async function getGraphSnapshot(options?: {
     graph,
     sessionId: options?.sessionId,
   });
-  const recommendationResult = await buildRetrievalRecommendations({
-    graph: rankedGraph,
-    startStoryIds: recentSessionStories,
-    topK: 10,
-  });
+    const recommendationResult = await buildRetrievalRecommendations({
+      graph: rankedGraph,
+      startStoryIds: recentSessionStories,
+      topK: 15,
+    });
 
   return {
     ...rankedGraph,

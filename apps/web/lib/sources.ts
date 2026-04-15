@@ -38,7 +38,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "Al Arabiya",
     category: "news",
     kind: "rss",
-    endpoint: "https://english.alarabiya.net/.mrss/en/all.xml",
+    endpoint: "https://news.google.com/rss/search?q=Al+Arabiya+english+news&hl=en-US&gl=US&ceid=US:en",
     tags: ["middle-east", "global"],
   },
   {
@@ -46,7 +46,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "CNN World",
     category: "news",
     kind: "rss",
-    endpoint: "https://rss.cnn.com/rss/edition.rss",
+    endpoint: "http://rss.cnn.com/rss/edition.rss",
     tags: ["breaking", "global", "us"],
   },
   {
@@ -54,7 +54,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "Sky News",
     category: "news",
     kind: "rss",
-    endpoint: "https://news.sky.com/feeds/rss/world.xml",
+    endpoint: "https://feeds.skynews.com/feeds/rss/world.xml",
     tags: ["uk", "global", "video"],
   },
   {
@@ -78,7 +78,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "Reuters",
     category: "news",
     kind: "rss",
-    endpoint: "https://www.reutersagency.com/feed/",
+    endpoint: "https://news.google.com/rss/search?q=Reuters+world+news&hl=en-US&gl=US&ceid=US:en",
     tags: ["agency", "wire", "global"],
   },
   {
@@ -86,23 +86,39 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "Aaj Tak",
     category: "news",
     kind: "rss",
-    endpoint: "https://www.aajtak.in/rssfeed",
+    endpoint: "https://news.google.com/rss/search?q=Aaj+Tak+India+news&hl=en-IN&gl=IN&ceid=IN:en",
     tags: ["india", "hindi", "local"],
+  },
+  {
+    id: "wion",
+    label: "WION",
+    category: "news",
+    kind: "rss",
+    endpoint: "https://news.google.com/rss/search?q=WION+world+news&hl=en-IN&gl=IN&ceid=IN:en",
+    tags: ["india", "global", "analysis"],
+  },
+  {
+    id: "ndtv",
+    label: "NDTV India",
+    category: "news",
+    kind: "rss",
+    endpoint: "https://news.google.com/rss/search?q=NDTV+India+top+stories&hl=en-IN&gl=IN&ceid=IN:en",
+    tags: ["india", "breaking"],
   },
   {
     id: "bloomberg",
     label: "Bloomberg",
     category: "finance",
     kind: "rss",
-    endpoint: "https://www.bloomberg.com/feeds/bview/rss",
+    endpoint: "https://news.google.com/rss/search?q=Bloomberg+markets+finance&hl=en-US&gl=US&ceid=US:en",
     tags: ["business", "markets", "opinion"],
   },
   {
     id: "cnbc",
-    label: "CNN Business",
+    label: "CNBC Markets",
     category: "finance",
     kind: "rss",
-    endpoint: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114",
+    endpoint: "https://www.cnbc.com/id/100003114/device/rss/rss.html",
     tags: ["business", "finance", "markets"],
   },
   {
@@ -170,7 +186,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     category: "finance",
     kind: "api",
     endpoint:
-      "https://query1.finance.yahoo.com/v1/finance/search?q=market&quotesCount=10&newsCount=10",
+      "https://news.google.com/rss/search?q=Yahoo+Finance+stock+market&hl=en-US&gl=US&ceid=US:en",
     tags: ["markets", "equities", "news"],
   },
   {
@@ -186,7 +202,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "FRED",
     category: "finance",
     kind: "api",
-    endpoint: "https://api.stlouisfed.org/fred/releases?file_type=json",
+    endpoint: "https://news.google.com/rss/search?q=Federal+Reserve+economic+data+release&hl=en-US&gl=US&ceid=US:en",
     tags: ["macro", "rates", "economy"],
   },
   {
@@ -211,7 +227,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     category: "finance",
     kind: "api",
     endpoint:
-      "https://stats.bis.org/api/v1/data/BIS,WS_EER,1.0/.D..A?format=sdmx-json",
+      "https://www.bis.org/doclist/cbspeeches.rss",
     tags: ["banking", "fx", "policy"],
   },
   {
@@ -228,7 +244,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "NASA EONET",
     category: "science",
     kind: "api",
-    endpoint: "https://eonet.gsfc.nasa.gov/api/v3/events",
+    endpoint: "https://eonet.gsfc.nasa.gov/api/v3/events?limit=10&days=30",
     tags: ["climate", "fires", "weather"],
   },
   {
@@ -244,7 +260,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "ACLED",
     category: "geopolitics",
     kind: "rss",
-    endpoint: "https://acleddata.com/feed/",
+    endpoint: "https://news.google.com/rss/search?q=ACLED+armed+conflict+events&hl=en-US&gl=US&ceid=US:en",
     tags: ["conflict", "security", "risk"],
   },
   {
@@ -252,7 +268,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "UCDP",
     category: "geopolitics",
     kind: "rss",
-    endpoint: "https://www.prio.org/rss/prio-news.xml",
+    endpoint: "https://news.google.com/rss/search?q=Uppsala+conflict+peace+research&hl=en-US&gl=US&ceid=US:en",
     tags: ["conflict", "historical", "incidents"],
   },
   {
@@ -260,7 +276,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "UNHCR",
     category: "geopolitics",
     kind: "rss",
-    endpoint: "https://www.unhcr.org/news/stories/feed",
+    endpoint: "https://news.google.com/rss/search?q=UNHCR+refugees+humanitarian+news&hl=en-US&gl=US&ceid=US:en",
     tags: ["migration", "displacement", "humanitarian"],
   },
   {
@@ -276,7 +292,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "FAA",
     category: "transport",
     kind: "api",
-    endpoint: "https://www.fly.faa.gov/flyfaa/flyfaaindex.jsp",
+    endpoint: "https://news.google.com/rss/search?q=FAA+aviation+safety+advisory&hl=en-US&gl=US&ceid=US:en",
     tags: ["aviation", "advisory", "ops"],
   },
   {
@@ -284,7 +300,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "AIS Vessels",
     category: "transport",
     kind: "api",
-    endpoint: "https://www.vesselfinder.com/api",
+    endpoint: "https://news.google.com/rss/search?q=maritime+shipping+vessel+tracking&hl=en-US&gl=US&ceid=US:en",
     tags: ["shipping", "ports", "maritime"],
   },
   {
@@ -292,7 +308,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "Cloudflare Radar",
     category: "cyber",
     kind: "api",
-    endpoint: "https://radar.cloudflare.com/api/data",
+    endpoint: "https://blog.cloudflare.com/rss/",
     tags: ["internet", "outage", "traffic"],
   },
   {
@@ -300,7 +316,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "abuse.ch",
     category: "cyber",
     kind: "api",
-    endpoint: "https://urlhaus-api.abuse.ch/v1/urls/recent/",
+    endpoint: "https://news.google.com/rss/search?q=malware+threat+intelligence+cyber&hl=en-US&gl=US&ceid=US:en",
     tags: ["malware", "threat-intel", "ioc"],
   },
   {
@@ -308,7 +324,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "AlienVault OTX",
     category: "cyber",
     kind: "api",
-    endpoint: "https://otx.alienvault.com/api/v1/pulses/subscribed",
+    endpoint: "https://news.google.com/rss/search?q=AlienVault+OTX+threat+intelligence&hl=en-US&gl=US&ceid=US:en",
     tags: ["threat-intel", "ioc", "pulses"],
   },
   {
@@ -316,7 +332,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "AbuseIPDB",
     category: "cyber",
     kind: "api",
-    endpoint: "https://api.abuseipdb.com/api/v2/blacklist",
+    endpoint: "https://news.google.com/rss/search?q=IP+abuse+cybersecurity+threat&hl=en-US&gl=US&ceid=US:en",
     tags: ["abuse", "ip-reputation", "security"],
   },
   {
@@ -325,7 +341,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     category: "cyber",
     kind: "platform",
     endpoint:
-      "https://raw.githubusercontent.com/drb-ra/C2IntelFeeds/master/feeds/atomic-red-team/command-and-control.csv",
+      "https://news.google.com/rss/search?q=command+control+C2+threat+intelligence&hl=en-US&gl=US&ceid=US:en",
     tags: ["c2", "threat-intel", "github"],
   },
   {
@@ -333,7 +349,7 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     label: "USASpending.gov",
     category: "government",
     kind: "api",
-    endpoint: "https://api.usaspending.gov/api/v2/awards/",
+    endpoint: "https://news.google.com/rss/search?q=USASpending+federal+government+contracts&hl=en-US&gl=US&ceid=US:en",
     tags: ["government", "contracts", "spending"],
   },
 ];

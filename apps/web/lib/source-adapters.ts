@@ -16,7 +16,7 @@ import { SOURCE_DEFINITIONS, TOPICS, type SourceDefinition } from "./sources";
 import { buildStoryRecommendations } from "./vector-store";
 
 const REQUEST_TIMEOUT_MS = 8000;
-const STORIES_PER_SOURCE = 6;
+const STORIES_PER_SOURCE = 10;
 const VECTOR_SEARCH_TOP_K = Number(process.env.VECTOR_SEARCH_TOP_K ?? 5);
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const FRED_API_KEY = process.env.FRED_API_KEY;
@@ -98,6 +98,11 @@ const requestJson = async <T>(url: string, init?: RequestInit): Promise<T> => {
   try {
     const res = await fetch(url, {
       ...init,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        ...(init?.headers || {}),
+      },
       signal: controller.signal,
       next: { revalidate: 120 },
     });
@@ -116,7 +121,8 @@ const requestText = async (url: string): Promise<string> => {
   try {
     const res = await fetch(url, {
       headers: {
-        "User-Agent": "news-aggregator",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*;q=0.9",
       },
       signal: controller.signal,
       next: { revalidate: 120 },
@@ -154,13 +160,18 @@ const createStory = (
   };
 };
 
-const rssParser = new Parser();
+const rssParser = new Parser({
+  headers: {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  },
+});
 
 const fetchRssStories = async (
   source: SourceDefinition,
 ): Promise<StoryNode[]> => {
   try {
-    const feed = await rssParser.parseURL(source.endpoint);
+    const xml = await requestText(source.endpoint);
+    const feed = await rssParser.parseString(xml);
     return (feed.items || [])
       .slice(0, STORIES_PER_SOURCE)
       .map((item, idx) => {
@@ -177,7 +188,7 @@ const fetchRssStories = async (
         );
       });
   } catch (e) {
-    console.warn(`RSS fetch failed for ${source.id}:`, e);
+    console.warn(`RSS parse failed for ${source.id}:`, e);
     return [];
   }
 };
@@ -758,7 +769,7 @@ const adapters: Partial<
   rss2json: fetchRss2JsonStories,
   gdelt: fetchGdeltStories,
   finnhub: fetchFinnhubStories,
-  fred: fetchFredStories,
+  fred: fetchRssStories,
   eia: fetchEiaStories,
   "hacker-news": fetchHackerNewsStories,
   github: fetchGithubStories,
@@ -781,6 +792,18 @@ const adapters: Partial<
   acled: fetchRssStories,
   ucdp: fetchRssStories,
   unhcr: fetchRssStories,
+  wion: fetchRssStories,
+  ndtv: fetchRssStories,
+  "yahoo-finance": fetchRssStories,
+  bis: fetchRssStories,
+  faa: fetchRssStories,
+  ais: fetchRssStories,
+  "cloudflare-radar": fetchRssStories,
+  abusech: fetchRssStories,
+  "alienvault-otx": fetchRssStories,
+  abuseipdb: fetchRssStories,
+  c2intelfeeds: fetchRssStories,
+  usaspending: fetchRssStories,
 };
 
 const fetchStoriesForSource = async (

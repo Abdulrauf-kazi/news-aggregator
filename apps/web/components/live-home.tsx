@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState, useMemo } from "react";
 import DOMPurify from "isomorphic-dompurify";
 import { NewsGraph } from "./news-graph";
 import type { StoryGraph } from "../lib/graph";
+import { RabbitLoaderScene } from "./loader/RabbitLoaderScene";
+import { AnimatePresence, motion } from "framer-motion";
 
 type LivePayload = StoryGraph & {
   meta: {
@@ -54,8 +56,29 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [bookmarks, setBookmarks] = useState<string[]>([]);
   const [selectedGraphNodeId, setSelectedGraphNodeId] = useState<string | null>(null);
-  const [fullArticle, setFullArticle] = useState<{ html: string, text: string, imageUrl?: string } | null>(null);
+  const [fullArticle, setFullArticle] = useState<{ 
+    html: string; text: string; imageUrl?: string; 
+    author?: string; publishedDate?: string; readingTime?: number; 
+    siteName?: string; finalUrl?: string; byline?: string;
+  } | null>(null);
   const [isLoadingArticle, setIsLoadingArticle] = useState(false);
+  
+  // Loader states for interactive transition
+  const [showInitialLoader, setShowInitialLoader] = useState(true);
+  const [isExitingLoader, setIsExitingLoader] = useState(false);
+
+  useEffect(() => {
+    // Sequence the loader exit
+    const exitTimer = setTimeout(() => {
+      setIsExitingLoader(true);
+      const removeTimer = setTimeout(() => {
+        setShowInitialLoader(false);
+      }, 1000); // Wait for exit animation to complete
+      return () => clearTimeout(removeTimer);
+    }, 1800); // Show loader for a bit to ensure it's seen
+
+    return () => clearTimeout(exitTimer);
+  }, []);
 
   const connectedStories = useMemo(() => {
     if (!selectedGraphNodeId) return [];
@@ -103,11 +126,17 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
       fetch(`/api/fetch-article?url=${encodeURIComponent(articleUrl)}`)
         .then(res => res.json())
         .then(res => {
-           if (active && res.text) {
+           if (active && (res.text || res.html)) {
              setFullArticle({
                html: res.html,
                text: res.text,
-               imageUrl: res.imageUrl
+               imageUrl: res.imageUrl,
+               author: res.byline || res.author,
+               publishedDate: res.publishedDate,
+               readingTime: res.readingTime,
+               siteName: res.siteName,
+               finalUrl: res.finalUrl,
+               byline: res.byline,
              });
            }
         })
@@ -196,16 +225,33 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const stories = data.stories.slice(0, 60);
+  const stories = data.stories.slice(0, 80);
   const lead = stories[0];
   const graphNodes = data.nodes.filter((node) => node.type === "story").length;
   const recommendationStories = data.meta.recommendations
     .map((id) => data.stories.find((story) => story.id === id))
     .filter((story): story is StoryGraph["stories"][number] => Boolean(story))
-    .slice(0, 4);
+    .slice(0, 15);
 
   return (
-    <main className="max-w-[1600px] mx-auto px-6 lg:px-12 py-12">
+    <>
+      <AnimatePresence>
+        {showInitialLoader && (
+          <motion.div
+            key="initial-loader"
+            className="rabbit-loader-overlay"
+            style={{ zIndex: 10000 }}
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 1.05, filter: "blur(12px)" }}
+            transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <RabbitLoaderScene isExiting={isExitingLoader} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <main className="max-w-[1600px] mx-auto px-6 lg:px-12 py-12">
       <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <div className="flex items-center gap-3 mb-4">
@@ -481,129 +527,196 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
         </article>
       </div>
 
-      {/* Swarm Intelligence Detailed View Overlay */}
+      {/* Article Detail View — Medium-style */}
       {selectedGraphNodeId && mainStory && (
-        <div className="fixed inset-0 z-[100] flex animate-in fade-in duration-300 bg-[#f5f5f4]/95 backdrop-blur-md">
+        <div className="fixed inset-0 z-[100] flex animate-in fade-in duration-300 bg-white">
           {/* Main Content (Center) */}
-          <div className="flex-1 flex flex-col h-full overflow-hidden border-r border-[#d6d3d1] relative">
-            <header className="px-8 lg:px-12 py-8 border-b border-[#d6d3d1] bg-white/80 sticky top-0 z-10 flex justify-between items-start shadow-sm">
-              <div>
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="status-dot"></span>
-                  <span className="text-[10px] font-headline uppercase tracking-[0.2em] text-accent font-bold">Node Analysis</span>
-                  <span className="tag ml-2">{mainStory.topic}</span>
-                </div>
-                <h2 className="text-3xl font-bold text-primary font-headline leading-tight max-w-4xl">
-                  {mainStory.title}
-                </h2>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-3">
-                 <button 
-                   onClick={(e) => toggleBookmark(e, mainStory.id)}
-                   className={`px-4 py-2 border text-[10px] font-headline uppercase tracking-wider rounded-md transition-colors flex items-center justify-center gap-2 shadow-sm h-10 ${bookmarks.includes(mainStory.id) ? 'bg-accent text-white border-accent' : 'bg-white text-secondary border-[#d6d3d1] hover:text-primary hover:border-primary'}`}
-                 >
-                   {bookmarks.includes(mainStory.id) ? '★ Bookmarked' : '☆ Bookmark'}
-                 </button>
-                 {articleUrl && (
-                   <a 
-                     href={articleUrl} 
-                     target="_blank" 
-                     rel="noreferrer"
-                     className="px-4 py-2 bg-primary text-white text-[10px] font-headline uppercase tracking-wider rounded-md hover:bg-accent transition-colors flex items-center justify-center gap-2 shadow-md h-10"
-                   >
-                     Read Original
-                     <span className="text-[14px] leading-none">↗</span>
-                   </a>
-                 )}
-                 <button 
+          <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+            {/* Minimal top bar */}
+            <header className="px-6 lg:px-10 py-4 border-b border-[#e7e5e4] bg-white sticky top-0 z-10 flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <button 
                   onClick={() => setSelectedGraphNodeId(null)}
-                  className="w-10 h-10 flex items-center justify-center rounded-md bg-[#e7e5e4] text-secondary hover:text-accent hover:bg-white border border-transparent hover:border-accent transition-all"
+                  className="flex items-center gap-2 text-secondary hover:text-primary transition-colors text-sm"
+                >
+                  <span className="text-lg">←</span>
+                  <span className="font-headline text-[11px] uppercase tracking-wider font-bold hidden sm:inline">Back to Feed</span>
+                </button>
+                <span className="w-px h-6 bg-[#e7e5e4] hidden sm:block"></span>
+                <span className="tag text-[8px]">{mainStory.topic}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={(e) => toggleBookmark(e, mainStory.id)}
+                  className={`px-3 py-1.5 border text-[10px] font-headline uppercase tracking-wider rounded-full transition-colors flex items-center gap-1.5 ${bookmarks.includes(mainStory.id) ? 'bg-accent text-white border-accent' : 'bg-white text-secondary border-[#d6d3d1] hover:border-accent hover:text-accent'}`}
+                >
+                  {bookmarks.includes(mainStory.id) ? '★ Saved' : '☆ Save'}
+                </button>
+                {articleUrl && (
+                  <a 
+                    href={fullArticle?.finalUrl || articleUrl} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    className="px-3 py-1.5 bg-primary text-white text-[10px] font-headline uppercase tracking-wider rounded-full hover:bg-accent transition-colors flex items-center gap-1.5"
+                  >
+                    Original ↗
+                  </a>
+                )}
+                <button 
+                  onClick={() => setSelectedGraphNodeId(null)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-[#f5f5f4] text-secondary hover:text-accent hover:bg-[#e7e5e4] transition-all text-sm"
                 >
                   ✕
-                 </button>
+                </button>
               </div>
             </header>
             
-            <div className="flex-grow overflow-y-auto p-8 lg:p-12 bg-[radial-gradient(#d6d3d1_1px,transparent_1px)] [background-size:24px_24px]">
-               <section className="bg-white p-8 lg:p-10 rounded-2xl border-l-4 border-l-accent shadow-md max-w-4xl mx-auto">
-                 <p className="text-[11px] font-headline uppercase tracking-[0.1em] text-secondary mb-6">Primary Signal Data</p>
-                 
-                 {fullArticle?.imageUrl && (
-                   <div className="w-full h-64 sm:h-80 mb-8 rounded-xl overflow-hidden shadow-sm border border-[#e7e5e4]">
-                     <img src={fullArticle.imageUrl} alt="Article cover" className="w-full h-full object-cover" />
-                   </div>
-                 )}
-
-                 <div className="text-base text-primary leading-relaxed whitespace-pre-wrap font-medium">
-                   {isLoadingArticle ? (
-                     <span className="flex items-center gap-3 text-secondary animate-pulse">
-                       <span className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin"></span>
-                       Establishing secure uplink to original source...
-                     </span>
-                   ) : fullArticle?.html ? (
-                     <div 
-                       className="prose prose-sm sm:prose-base prose-neutral max-w-none prose-headings:font-headline prose-a:text-accent hover:prose-a:text-primary prose-img:rounded-xl"
-                       dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(fullArticle.html) }}
-                     />
-                   ) : (
-                     fullArticle?.text || mainStory.content || `A high-confidence signal regarding ${mainStory.topic}. Analyzed from ${mainStory.sourceIds.join(', ')}. Full text body has not been fully parsed by the ingestion engine yet.`
-                   )}
-                 </div>
-                 <div className="mt-8 pt-6 border-t border-[#f5f5f4] flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-secondary opacity-70 font-headline gap-4">
-                   <span>Ingestion Sources: {mainStory.sourceIds.join(', ')}</span>
-                   <span>Timestamp: {new Date(mainStory.timestamp).toLocaleString()}</span>
-                 </div>
-               </section>
-
-               {/* Signal Telemetry */}
-               <section className="bg-[#fafaf9] p-6 rounded-2xl border border-[#d6d3d1] shadow-inner max-w-4xl mx-auto w-full">
-                  <p className="text-[10px] font-headline uppercase tracking-[0.2em] text-secondary mb-4">Intelligence Telemetry</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
-                     <div>
-                       <p className="text-[8px] text-secondary uppercase font-headline mb-1">Vector Confidence</p>
-                       <p className="text-base font-bold font-headline text-primary">{Math.round(mainStory.score)}%</p>
-                     </div>
-                     <div>
-                       <p className="text-[8px] text-secondary uppercase font-headline mb-1">Semantic Topic</p>
-                       <p className="text-base font-bold font-headline text-accent">{mainStory.topic}</p>
-                     </div>
-                     <div>
-                       <p className="text-[8px] text-secondary uppercase font-headline mb-1">Source Count</p>
-                       <p className="text-base font-bold font-headline text-primary">{mainStory.sourceIds.length}</p>
-                     </div>
-                     <div>
-                       <p className="text-[8px] text-secondary uppercase font-headline mb-1">Relational Density</p>
-                       <p className="text-base font-bold font-headline text-primary">{neighborStories.length}</p>
-                     </div>
+            {/* Scrollable article body */}
+            <div className="flex-grow overflow-y-auto">
+              <article className="max-w-[720px] mx-auto px-6 lg:px-0 py-10">
+                {/* Article Header */}
+                <header className="mb-8">
+                  <h1 className="text-[32px] sm:text-[40px] font-bold text-[#242424] leading-[1.2] tracking-[-0.01em] mb-6" style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
+                    {mainStory.title}
+                  </h1>
+                  
+                  {/* Author / Meta bar */}
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent/80 to-accent flex items-center justify-center text-white font-bold text-sm shadow-sm">
+                      {(fullArticle?.author || fullArticle?.siteName || mainStory.sourceIds[0] || 'N').charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-[#242424]">
+                        {fullArticle?.author || fullArticle?.byline || fullArticle?.siteName || mainStory.sourceIds.join(' · ')}
+                      </p>
+                      <div className="flex items-center gap-2 text-[13px] text-[#6b6b6b] mt-0.5">
+                        {fullArticle?.readingTime && (
+                          <>
+                            <span>{fullArticle.readingTime} min read</span>
+                            <span>·</span>
+                          </>
+                        )}
+                        <span>
+                          {fullArticle?.publishedDate 
+                            ? new Date(fullArticle.publishedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                            : new Date(mainStory.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                          }
+                        </span>
+                        {fullArticle?.siteName && (
+                          <>
+                            <span>·</span>
+                            <span className="text-accent">{fullArticle.siteName}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
-               </section>
+
+                  {/* Divider */}
+                  <div className="border-t border-[#e7e5e4]"></div>
+                </header>
+
+                {/* Hero Image */}
+                {fullArticle?.imageUrl && (
+                  <figure className="mb-10 -mx-6 lg:-mx-16">
+                    <img 
+                      src={fullArticle.imageUrl} 
+                      alt={mainStory.title}
+                      className="w-full max-h-[480px] object-cover"
+                    />
+                  </figure>
+                )}
+
+                {/* Article Body */}
+                <div className="article-body">
+                  {isLoadingArticle ? (
+                    <div className="space-y-6 animate-pulse">
+                      <div className="space-y-3">
+                        <div className="h-4 bg-[#f0f0f0] rounded w-full"></div>
+                        <div className="h-4 bg-[#f0f0f0] rounded w-[95%]"></div>
+                        <div className="h-4 bg-[#f0f0f0] rounded w-[88%]"></div>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="h-4 bg-[#f0f0f0] rounded w-full"></div>
+                        <div className="h-4 bg-[#f0f0f0] rounded w-[92%]"></div>
+                        <div className="h-4 bg-[#f0f0f0] rounded w-[80%]"></div>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="h-4 bg-[#f0f0f0] rounded w-[96%]"></div>
+                        <div className="h-4 bg-[#f0f0f0] rounded w-full"></div>
+                        <div className="h-4 bg-[#f0f0f0] rounded w-[70%]"></div>
+                      </div>
+                      <p className="text-center text-sm text-[#6b6b6b] mt-8">
+                        Loading article content...
+                      </p>
+                    </div>
+                  ) : fullArticle?.html ? (
+                    <div 
+                      className="article-prose"
+                      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(fullArticle.html, { ADD_TAGS: ['figure', 'figcaption'], ADD_ATTR: ['loading'] }) }}
+                    />
+                  ) : fullArticle?.text ? (
+                    <div className="article-prose">
+                      {fullArticle.text.split('\n\n').filter(Boolean).map((paragraph, i) => (
+                        <p key={i}>{paragraph}</p>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-16 px-8">
+                      <div className="inline-block w-16 h-px bg-accent mb-8"></div>
+                      <blockquote className="text-xl sm:text-2xl text-[#242424] leading-relaxed mb-6 max-w-lg mx-auto" style={{ fontFamily: "'Georgia', serif" }}>
+                        {mainStory.content || `A signal regarding ${mainStory.topic} detected across ${mainStory.sourceIds.length} sources.`}
+                      </blockquote>
+                      <div className="inline-block w-16 h-px bg-accent mb-8"></div>
+                      <p className="text-[13px] text-[#6b6b6b] max-w-md mx-auto">
+                        Full article text could not be extracted from the original source. 
+                        Click <strong>&quot;Original&quot;</strong> above to read on the publisher&apos;s site.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Article Footer */}
+                <footer className="mt-12 pt-8 border-t border-[#e7e5e4]">
+                  <div className="flex flex-wrap items-center gap-3 mb-6">
+                    <span className="text-[11px] font-headline uppercase tracking-wider text-[#6b6b6b]">Sources:</span>
+                    {mainStory.sourceIds.map(src => (
+                      <span key={src} className="px-3 py-1 bg-[#f5f5f4] text-[11px] font-medium text-[#6b6b6b] rounded-full border border-[#e7e5e4]">{src}</span>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-[#6b6b6b]">
+                    <span>Intelligence Score: {Math.round(mainStory.score)}%</span>
+                    <span>Connected Signals: {neighborStories.length}</span>
+                  </div>
+                </footer>
+              </article>
             </div>
           </div>
           
-          {/* Related News (Side) */}
-          <aside className="w-full max-w-[420px] bg-white h-full flex flex-col shadow-[-8px_0_32px_rgba(0,0,0,0.05)] relative z-20 flex-shrink-0">
-             <header className="px-8 py-8 border-b border-[#d6d3d1] bg-[#fafaf9] sticky top-0">
-                <p className="text-[12px] font-headline uppercase tracking-[0.2em] text-primary font-bold">Related Signals</p>
-                <p className="text-[10px] font-headline text-secondary mt-1">{neighborStories.length} connected nodes in network</p>
+          {/* Related News Sidebar */}
+          <aside className="w-full max-w-[380px] bg-[#fafaf9] h-full flex flex-col border-l border-[#e7e5e4] relative z-20 flex-shrink-0 hidden lg:flex">
+             <header className="px-6 py-6 border-b border-[#e7e5e4] bg-white">
+                <p className="text-sm font-bold text-[#242424]">Related Signals</p>
+                <p className="text-[12px] text-[#6b6b6b] mt-1">{neighborStories.length} connected in network</p>
              </header>
-             <div className="flex-grow overflow-y-auto p-6 space-y-4 bg-white">
+             <div className="flex-grow overflow-y-auto p-4 space-y-3">
                 {neighborStories.length > 0 ? neighborStories.map((story: StoryGraph["stories"][number]) => (
-                    <article key={story.id} className="premium-card p-5 rounded-xl cursor-pointer hover:bg-[#fafaf9] border border-[#e7e5e4] transition-all hover:border-accent hover:-translate-y-0.5 shadow-sm" onClick={() => setSelectedGraphNodeId(story.id)}>
-                      <div className="flex justify-between items-start mb-3">
-                        <span className="text-[9px] font-headline font-bold uppercase tracking-wider text-accent">{story.topic}</span>
-                        <span className="text-[9px] font-headline text-secondary opacity-60">{new Date(story.timestamp).toLocaleTimeString()}</span>
+                    <article key={story.id} className="p-4 rounded-xl cursor-pointer bg-white hover:bg-[#f5f5f4] border border-[#e7e5e4] transition-all hover:border-accent hover:-translate-y-0.5 shadow-sm" onClick={() => setSelectedGraphNodeId(story.id)}>
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-accent">{story.topic}</span>
+                        <span className="text-[10px] text-[#6b6b6b]">{new Date(story.timestamp).toLocaleTimeString()}</span>
                       </div>
-                      <h4 className="text-sm font-bold text-primary leading-snug group-hover:text-accent transition-colors mb-2 line-clamp-3">
+                      <h4 className="text-[13px] font-bold text-[#242424] leading-snug mb-2 line-clamp-3 hover:text-accent transition-colors">
                         {story.title}
                       </h4>
-                      <p className="text-[11px] text-secondary opacity-70 line-clamp-2">
-                        {story.content || `Secondary signal regarding ${story.topic}.`}
+                      <p className="text-[11px] text-[#6b6b6b] line-clamp-2">
+                        {story.content || `Signal regarding ${story.topic}.`}
                       </p>
                     </article>
                   )) : (
-                    <div className="text-center py-12 px-6 border-2 border-dashed border-[#d6d3d1] rounded-xl bg-[#fafaf9]">
-                       <span className="text-[10px] uppercase font-headline text-secondary tracking-widest block mb-2">Network Isolated</span>
-                       <span className="text-[11px] text-secondary/70">No direct graph edges found for this specific node.</span>
+                    <div className="text-center py-12 px-6">
+                       <p className="text-sm text-[#6b6b6b]">No connected signals found.</p>
+                       <p className="text-[12px] text-[#6b6b6b] opacity-60 mt-1">This node is isolated in the graph.</p>
                     </div>
                   )}
              </div>
@@ -611,5 +724,6 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
         </div>
       )}
     </main>
+    </>
   );
 }

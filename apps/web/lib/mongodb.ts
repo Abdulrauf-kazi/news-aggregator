@@ -29,5 +29,7 @@ export default clientPromise;
 
 export async function getDb() {
   const client = await clientPromise;
-  return client.db("news_aggregator");
+  // If the URI contains a DB name (like cluster0.mongodb.net/news_aggregator), client.db() will use it automatically.
+  // Otherwise it defaults to the primary cluster DB.
+  return client.db();
 }
