@@ -26,12 +26,6 @@ export function Navbar() {
             </Link>
             <Link
               className="text-secondary hover:text-primary transition-colors"
-              href="/ingestion"
-            >
-              Ingestion
-            </Link>
-            <Link
-              className="text-secondary hover:text-primary transition-colors"
               href="/sources"
             >
               Sources

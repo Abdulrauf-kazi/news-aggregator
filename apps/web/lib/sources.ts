@@ -139,13 +139,40 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     tags: ["normalization", "rss", "publishers"],
   },
   {
-    id: "gdelt",
-    label: "GDELT",
+    id: "gdelt-conflict",
+    label: "GDELT (Conflict)",
     category: "geopolitics",
     kind: "api",
     endpoint:
       "https://api.gdeltproject.org/api/v2/doc/doc?query=global%20conflict&mode=artlist&format=json&maxrecords=10",
     tags: ["events", "conflict", "geopolitics"],
+  },
+  {
+    id: "gdelt-tech",
+    label: "GDELT (Cyber & Tech)",
+    category: "cyber",
+    kind: "api",
+    endpoint:
+      "https://api.gdeltproject.org/api/v2/doc/doc?query=cyberattack%20OR%20artificial%20intelligence%20OR%20hack&mode=artlist&format=json&maxrecords=10",
+    tags: ["cyber", "tech", "ai"],
+  },
+  {
+    id: "gdelt-eco",
+    label: "GDELT (Economy)",
+    category: "finance",
+    kind: "api",
+    endpoint:
+      "https://api.gdeltproject.org/api/v2/doc/doc?query=inflation%20OR%20recession%20OR%20markets&mode=artlist&format=json&maxrecords=10",
+    tags: ["economy", "finance", "markets"],
+  },
+  {
+    id: "gdelt-climate",
+    label: "GDELT (Climate)",
+    category: "science",
+    kind: "api",
+    endpoint:
+      "https://api.gdeltproject.org/api/v2/doc/doc?query=climate%20change%20OR%20global%20warming%20OR%20natural%20disaster&mode=artlist&format=json&maxrecords=10",
+    tags: ["climate", "environment", "disaster"],
   },
   {
     id: "hacker-news",

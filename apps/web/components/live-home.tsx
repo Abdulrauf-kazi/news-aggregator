@@ -453,58 +453,41 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
               Saved {bookmarks.length > 0 ? `(${bookmarks.length})` : ''}
             </Link>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 auto-rows-[140px] grid-flow-dense">
+          <div className="columns-1 sm:columns-2 md:columns-3 lg:columns-4 xl:columns-5 gap-6 space-y-6">
             {stories.slice(1).map((story, i) => {
-              const pattern = i % 12;
-              const isHero = pattern === 0 || pattern === 7;
-              const isTall = pattern === 1 || pattern === 4 || pattern === 9;
-              const isWide = pattern === 2 || pattern === 6 || pattern === 10;
-              
-              let colSpan = "col-span-1";
-              let rowSpan = "row-span-1";
-              
-              if (isHero) {
-                colSpan = "md:col-span-2 lg:col-span-2 xl:col-span-2";
-                rowSpan = "row-span-2";
-              } else if (isTall) {
-                colSpan = "col-span-1";
-                rowSpan = "row-span-2";
-              } else if (isWide) {
-                colSpan = "md:col-span-2 lg:col-span-2 xl:col-span-2";
-                rowSpan = "row-span-1";
-              }
+              const isHighlight = i === 0 || i === 5 || i === 12; // occasionally highlight some blocks
               
               return (
                 <article
                   key={story.id}
-                  className={`premium-card rounded-2xl p-5 group cursor-pointer flex flex-col justify-between hover:scale-[1.02] transition-transform ${colSpan} ${rowSpan}`}
+                  className={`premium-card rounded-2xl p-5 md:p-6 group cursor-pointer flex flex-col justify-between hover:scale-[1.02] transition-transform break-inside-avoid w-full border ${isHighlight ? 'border-accent bg-[#fffdfc]' : 'border-[#d6d3d1]'}`}
                   onClick={() => {
                     void sendInteraction({ eventType: "click", storyId: story.id, topic: story.topic });
                     setSelectedGraphNodeId(story.id);
                   }}
                 >
-                  <div className="flex justify-between items-start mb-2">
-                    <p className="text-[10px] font-headline font-bold text-accent uppercase tracking-wider">{story.topic}</p>
+                  <div className="flex justify-between items-start mb-3">
+                    <p className={`text-[10px] font-headline font-bold uppercase tracking-wider ${isHighlight ? 'text-accent' : 'text-primary'}`}>{story.topic}</p>
                     <button 
                       onClick={(e) => toggleBookmark(e, story.id)}
-                      className={`text-[16px] leading-none transition-all hover:scale-125 ${bookmarks.includes(story.id) ? 'text-accent' : 'text-[#d6d3d1] hover:text-secondary'}`}
+                      className={`text-[16px] leading-none transition-all hover:scale-125 ${bookmarks.includes(story.id) ? 'text-accent' : 'text-[#a8a29e] hover:text-primary'}`}
                     >
                       {bookmarks.includes(story.id) ? '★' : '☆'}
                     </button>
                   </div>
-                  <div>
-                    <h3 className={`font-bold text-primary leading-snug group-hover:text-accent transition-colors ${isHero ? 'text-xl line-clamp-2 mb-2' : 'text-sm line-clamp-2 mb-1'}`}>
+                  <div className="mb-4">
+                    <h3 className={`font-bold text-primary leading-snug group-hover:text-accent transition-colors mb-2.5 ${isHighlight ? 'text-xl' : 'text-base'}`}>
                       {story.title}
                     </h3>
-                    <p className={`text-secondary text-xs opacity-80 ${isHero ? 'line-clamp-3' : 'line-clamp-2'}`}>
+                    <p className="text-secondary text-[12px] opacity-85 leading-relaxed">
                       {story.content ? story.content : `New intel regarding ${story.topic} detected from ${story.sourceIds?.join(', ') || 'multiple sources'}. Semantic analysis suggests high relevance to ongoing trends.`}
                     </p>
                   </div>
-                  <div className="mt-4 flex items-center justify-between">
-                     <div className="flex items-center gap-2 opacity-60">
-                        <span className="text-[10px] uppercase font-headline">{(story.sourceIds ?? [])[0] ?? 'Feed'}</span>
+                  <div className="mt-auto pt-3 border-t border-[#e7e5e4] flex items-center justify-between">
+                     <div className="flex items-center gap-2 opacity-70">
+                        <span className="text-[9px] uppercase font-headline font-semibold">{(story.sourceIds ?? [])[0] ?? 'Feed'}</span>
                         <span className="text-[10px] font-headline">·</span>
-                        <span className="text-[10px] font-headline">{data.meta.fetchedAt ? new Date(data.meta.fetchedAt).toLocaleTimeString() : 'Now'}</span>
+                        <span className="text-[9px] font-headline">{data.meta.fetchedAt ? new Date(data.meta.fetchedAt).toLocaleTimeString() : 'Now'}</span>
                      </div>
                      {getArticleUrl(story) && (
                        <a 
@@ -512,7 +495,7 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
                          target="_blank" 
                          rel="noreferrer"
                          onClick={(e) => e.stopPropagation()}
-                         className="px-2 py-1 flex items-center gap-1 rounded-md bg-[#e7e5e4] text-secondary hover:bg-accent hover:text-white transition-all shadow-sm text-[8px] font-headline uppercase font-bold"
+                         className="px-2.5 py-1.5 flex items-center gap-1 rounded-md bg-[#f5f5f4] text-secondary hover:bg-accent hover:text-white transition-all shadow-sm text-[8px] font-headline uppercase font-bold"
                          title="Open Original Site"
                        >
                          Open Site

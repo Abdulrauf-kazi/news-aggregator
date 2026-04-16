@@ -767,7 +767,10 @@ const adapters: Partial<
 > = {
   "rss-atom": fetchRssStories,
   rss2json: fetchRss2JsonStories,
-  gdelt: fetchGdeltStories,
+  "gdelt-conflict": fetchGdeltStories,
+  "gdelt-tech": fetchGdeltStories,
+  "gdelt-eco": fetchGdeltStories,
+  "gdelt-climate": fetchGdeltStories,
   finnhub: fetchFinnhubStories,
   fred: fetchRssStories,
   eia: fetchEiaStories,
