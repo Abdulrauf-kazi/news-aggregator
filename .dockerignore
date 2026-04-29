@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Node dependencies (will be installed fresh inside Docker)
+node_modules
+apps/**/node_modules
+packages/**/node_modules
+
+# Build outputs (will be generated fresh inside Docker)
+.next
+apps/**/.next
+
+# Turborepo cache
+.turbo
+
+# Environment files (inject these as Docker secrets or env vars at runtime)
+.env
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+bun-debug.log*
+
+# Misc
+.vercel
+*.md

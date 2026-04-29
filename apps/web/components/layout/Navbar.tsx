@@ -1,63 +1,116 @@
+"use client";
+
 import Link from "next/link";
+import { useState, useEffect } from "react";
 
 export function Navbar() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setIsModalOpen(prev => !prev);
+      }
+      if (e.key === "Escape") {
+        setIsModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const toggleSidebar = () => {
+    window.dispatchEvent(new CustomEvent("toggle-sidebar"));
+  };
+
   return (
-    <nav className="fixed top-0 w-full z-50 bg-[#efefec] border-b border-neutral-500">
-      <div className="flex justify-between items-center px-6 lg:px-12 h-16 max-w-[1600px] mx-auto">
-        <div className="flex items-center gap-10">
-          <Link className="flex items-center gap-2" href="/">
-            <span className="text-xl font-black text-primary uppercase tracking-tight font-headline flex items-center">
-              News<span className="text-accent ml-1">Monitor</span>
-            </span>
-          </Link>
-          <div className="hidden lg:flex items-center gap-6 font-headline font-bold text-[12px] uppercase tracking-wider">
-            <Link
-              className="text-secondary hover:text-primary transition-colors"
-              href="/"
-            >
-              Home
+    <>
+      <nav className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-[#d6d3d1]">
+        <div className="flex justify-between items-center px-6 lg:px-12 h-16 max-w-[1800px] mx-auto">
+          <div className="flex items-center gap-10">
+            <Link className="flex items-center gap-2" href="/">
+              <span className="text-xl font-black text-[#1c1917] uppercase tracking-tight font-headline flex items-center">
+                News<span className="text-[#ff3e00] ml-1">Monitor</span>
+              </span>
             </Link>
-            <Link
-              className="text-secondary hover:text-primary transition-colors relative group"
-              href="/news-graph"
+            <div className="hidden lg:flex items-center gap-6 font-headline font-bold text-[11px] uppercase tracking-widest">
+              <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/">Home</Link>
+              <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/news-graph">Network</Link>
+              <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/sources">Sources</Link>
+              <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/bookmarks">Archive</Link>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="hidden md:flex items-center gap-3 bg-[#f5f5f4] border border-[#d6d3d1] hover:border-[#ff3e00] px-3 py-2 rounded-lg transition-all group shadow-sm"
             >
-              Graph
-              <span className="absolute -bottom-1 left-0 w-full h-0.5 bg-accent transform scale-x-0 group-hover:scale-x-100 transition-transform"></span>
-            </Link>
-            <Link
-              className="text-secondary hover:text-primary transition-colors"
-              href="/sources"
+              <span className="material-symbols-outlined text-[18px] text-[#a8a29e] group-hover:text-[#ff3e00]">search</span>
+              <span className="text-[13px] font-medium text-[#57534e] group-hover:text-[#1c1917] pr-8 uppercase font-headline">Search intelligence...</span>
+              <div className="flex items-center gap-1">
+                <span className="modal-kbd">⌘</span>
+                <span className="modal-kbd">K</span>
+              </div>
+            </button>
+
+            <button 
+              onClick={toggleSidebar}
+              className="flex items-center justify-center w-10 h-10 rounded-lg bg-white border border-[#d6d3d1] text-[#57534e] hover:text-[#ff3e00] hover:border-[#ff3e00] transition-all shadow-sm"
+              title="Toggle Sidebar"
             >
-              Sources
-            </Link>
-            <Link
-              className="text-secondary hover:text-primary transition-colors"
-              href="/bookmarks"
+              <span className="material-symbols-outlined text-[20px]">side_navigation</span>
+            </button>
+
+            <Link 
+              href="/live"
+              className="flex items-center gap-2 px-4 py-2 bg-[#ff3e00] text-white text-[11px] font-headline font-bold uppercase tracking-widest rounded-lg hover:bg-[#e03500] transition-all shadow-sm"
             >
-              Bookmarks
+              <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse shadow-[0_0_8px_white]"></span>
+              Live Feed
             </Link>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="hidden md:flex items-center bg-white rounded-md px-3 py-1.5 border border-neutral-400">
-            <span className="material-symbols-outlined text-[18px] text-secondary">
-              search
-            </span>
-            <input
-              className="bg-transparent border-none text-sm focus:ring-0 outline-none placeholder:text-secondary/60 w-32"
-              placeholder="Search news..."
-              type="text"
-            />
+      </nav>
+
+      {isModalOpen && (
+        <div className="navbar-modal-overlay" onClick={() => setIsModalOpen(false)}>
+          <div className="navbar-modal-content" onClick={e => e.stopPropagation()}>
+            <div className="relative border-b border-[#d6d3d1]">
+              <span className="absolute left-6 top-1/2 -translate-y-1/2 material-symbols-outlined text-[#a8a29e] text-2xl">search</span>
+              <input 
+                autoFocus
+                className="w-full bg-white border-none text-[#1c1917] pl-16 py-8 text-xl outline-none font-body" 
+                placeholder="Search signals, sources, or events..." 
+                type="text" 
+              />
+            </div>
+            
+            <div className="p-6 bg-[#fdfdfc]">
+              <p className="text-[10px] font-headline font-bold text-[#a8a29e] uppercase tracking-widest px-4 mb-4">Intelligence Quick Actions</p>
+              <div className="grid grid-cols-2 gap-3">
+                 <div className="flex items-center gap-4 p-5 rounded-2xl bg-white border border-[#d6d3d1] hover:border-[#ff3e00] cursor-pointer group transition-all shadow-sm">
+                    <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center text-[#ff3e00]"><span className="material-symbols-outlined">trending_up</span></div>
+                    <span className="text-sm font-bold text-[#57534e] group-hover:text-[#1c1917] transition-colors font-headline uppercase">Market Trends</span>
+                 </div>
+                 <div className="flex items-center gap-4 p-5 rounded-2xl bg-white border border-[#d6d3d1] hover:border-[#ff3e00] cursor-pointer group transition-all shadow-sm">
+                    <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center text-[#ff3e00]"><span className="material-symbols-outlined">bolt</span></div>
+                    <span className="text-sm font-bold text-[#57534e] group-hover:text-[#1c1917] transition-colors font-headline uppercase">Urgent Signals</span>
+                 </div>
+              </div>
+            </div>
+
+            <div className="p-5 bg-white border-t border-[#d6d3d1] flex items-center justify-between shadow-inner">
+                <div className="flex items-center gap-8">
+                  <div className="flex items-center gap-2"><span className="modal-kbd">ESC</span><span className="text-[10px] text-[#a8a29e] font-bold uppercase font-headline">Close</span></div>
+                  <div className="flex items-center gap-2"><span className="modal-kbd">ENTER</span><span className="text-[10px] text-[#a8a29e] font-bold uppercase font-headline">Search</span></div>
+                </div>
+                <p className="text-[9px] text-[#a8a29e] font-headline uppercase font-bold tracking-tight">Semantic Engine v4.2</p>
+            </div>
           </div>
-          <Link 
-            href="/live"
-            className="text-[11px] uppercase tracking-wider font-semibold text-secondary border border-neutral-400 rounded-md px-2 py-1 hover:bg-primary hover:text-white hover:border-primary transition-all cursor-pointer flex items-center gap-1.5"
-          >
-            <span className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse"></span>
-            Live
-          </Link>
         </div>
-      </div>
-    </nav>
+      )}
+    </>
   );
 }

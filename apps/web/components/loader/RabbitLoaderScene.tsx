@@ -110,7 +110,10 @@ export function RabbitLoaderScene({ isExiting = false }: { isExiting?: boolean }
             key={`matrix-${item.id}`}
             style={{
               left: item.left,
-              animation: `matrix-fall ${item.duration}s linear infinite`,
+              animationName: "matrix-fall",
+              animationDuration: `${item.duration}s`,
+              animationTimingFunction: "linear",
+              animationIterationCount: "infinite",
               animationDelay: `${item.delay}s`,
               position: "absolute",
               top: -20,
@@ -125,7 +128,12 @@ export function RabbitLoaderScene({ isExiting = false }: { isExiting?: boolean }
       <div className="relative w-72 h-48 flex flex-col items-center justify-center">
         {/* Radar Ping Effect */}
         <div 
-          style={{ animation: "radar-ping 2s ease-out infinite" }}
+          style={{ 
+            animationName: "radar-ping",
+            animationDuration: "2s",
+            animationTimingFunction: "ease-out",
+            animationIterationCount: "infinite"
+          }}
           className="absolute w-32 h-32 border-2 border-accent/20 rounded-full"
         />
         
@@ -137,7 +145,10 @@ export function RabbitLoaderScene({ isExiting = false }: { isExiting?: boolean }
               style={{ 
                 top: `${15 + i * 15}%`,
                 width: `${80 + Math.random() * 100}px`,
-                animation: `speed-line-anim ${0.3 + Math.random() * 0.2}s linear infinite`,
+                animationName: "speed-line-anim",
+                animationDuration: `${0.3 + Math.random() * 0.2}s`,
+                animationTimingFunction: "linear",
+                animationIterationCount: "infinite",
                 animationDelay: `${i * 0.05}s`
               }}
               className="absolute h-[1px] bg-gradient-to-r from-transparent via-accent to-transparent"
@@ -152,7 +163,13 @@ export function RabbitLoaderScene({ isExiting = false }: { isExiting?: boolean }
             <circle 
               cx="10" cy="65" r="15" 
               fill="url(#fireGradient)"
-              style={{ animation: "flame-flicker 0.1s ease-in-out infinite", transformOrigin: "10px 65px" }}
+              style={{ 
+                animationName: "flame-flicker",
+                animationDuration: "0.1s",
+                animationTimingFunction: "ease-in-out",
+                animationIterationCount: "infinite",
+                transformOrigin: "10px 65px" 
+              }}
             />
             <defs>
               <radialGradient id="fireGradient">
@@ -165,12 +182,25 @@ export function RabbitLoaderScene({ isExiting = false }: { isExiting?: boolean }
             <path
               d="M30,30 Q5,5 35,20 Q30,30 30,30"
               fill="#0a0a0a"
-              style={{ animation: "rabbit-ear-flap 0.08s ease-in-out infinite", transformOrigin: "30px 30px" }}
+              style={{ 
+                animationName: "rabbit-ear-flap",
+                animationDuration: "0.08s",
+                animationTimingFunction: "ease-in-out",
+                animationIterationCount: "infinite",
+                transformOrigin: "30px 30px" 
+              }}
             />
             <path
               d="M50,25 Q20,0 55,15 Q50,25 50,25"
               fill="#0a0a0a"
-              style={{ animation: "rabbit-ear-flap 0.08s ease-in-out infinite", animationDelay: "0.04s", transformOrigin: "50px 25px" }}
+              style={{ 
+                animationName: "rabbit-ear-flap",
+                animationDuration: "0.08s",
+                animationTimingFunction: "ease-in-out",
+                animationIterationCount: "infinite",
+                animationDelay: "0.04s", 
+                transformOrigin: "50px 25px" 
+              }}
             />
             
             {/* Body */}
@@ -194,7 +224,10 @@ export function RabbitLoaderScene({ isExiting = false }: { isExiting?: boolean }
         <div className="absolute bottom-0 w-full h-1 bg-primary/10 rounded-full overflow-hidden">
           <div 
             style={{ 
-              animation: "ground-scroll 0.2s linear infinite",
+              animationName: "ground-scroll",
+              animationDuration: "0.2s",
+              animationTimingFunction: "linear",
+              animationIterationCount: "infinite",
               backgroundImage: "repeating-linear-gradient(90deg, transparent, transparent 15px, var(--color-accent) 15px, var(--color-accent) 30px)"
             }}
             className="w-[200%] h-full opacity-30"

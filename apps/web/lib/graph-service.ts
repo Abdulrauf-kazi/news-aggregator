@@ -10,8 +10,9 @@ import {
 } from "./session-personalization";
 
 const GRAPH_CACHE_KEY = "news:graph:live";
+const GRAPH_LOCK_KEY = "news:graph:ingestion-lock";
 const GRAPH_CACHE_TTL_SECONDS = Number(
-  process.env.GRAPH_CACHE_TTL_SECONDS ?? 20,
+  process.env.GRAPH_CACHE_TTL_SECONDS ?? 600,
 );
 const TIME_DECAY_LAMBDA = Number(process.env.TIME_DECAY_LAMBDA ?? 0.08);
 const EXPLORATION_INJECTION_RATE = Number(
@@ -386,6 +387,36 @@ const rankGraphByScores = async (input: {
   };
 };
 
+async function triggerBackgroundIngestion() {
+  const { getRedisClient, cacheJson } = await import("./redis");
+  const redis = getRedisClient();
+  if (!redis) return;
+
+  // Try to acquire a lock for 2 minutes to prevent concurrent ingestions
+  // Using a simple set with NX (not exists) and EX (expire)
+  try {
+    const locked = await redis.set(GRAPH_LOCK_KEY, "locked", "EX", 120, "NX");
+    if (!locked) return;
+  } catch (e) {
+    // If Redis doesn't support NX/EX in one command or connection issue
+    return;
+  }
+
+  try {
+    const { buildLiveGraph } = await import("./source-adapters");
+    const graph = await buildLiveGraph();
+    await cacheJson(GRAPH_CACHE_KEY, graph, GRAPH_CACHE_TTL_SECONDS);
+  } catch (error) {
+    console.error("Background ingestion failed:", error);
+  } finally {
+    try {
+      await redis.del(GRAPH_LOCK_KEY);
+    } catch {
+      // Ignore
+    }
+  }
+}
+
 export async function getGraphSnapshot(options?: {
   forceRefresh?: boolean;
   sessionId?: string;
@@ -397,6 +428,7 @@ export async function getGraphSnapshot(options?: {
   const cached = options?.forceRefresh
     ? null
     : await getCachedJson<StoryGraph>(GRAPH_CACHE_KEY);
+
   if (cached && cached.stories.length > 0) {
     const [stories, metrics] = await Promise.all([
       readStoredStories(),
@@ -428,30 +460,65 @@ export async function getGraphSnapshot(options?: {
     };
   }
 
-  const graph = await buildLiveGraph();
-  await cacheJson(GRAPH_CACHE_KEY, graph, GRAPH_CACHE_TTL_SECONDS);
-  const [stories, metrics] = await Promise.all([
+  // If no cache, return what we have in DB immediately and trigger background refresh
+  const [dbStories, dbMetrics] = await Promise.all([
     readStoredStories(),
     readSourceMetrics(),
   ]);
-  const rankedGraph = await rankGraphByScores({
-    graph,
-    sessionId: options?.sessionId,
-  });
+
+  if (dbStories.length > 0) {
+    // Return DB stories immediately
+    void triggerBackgroundIngestion();
+
+    const { createStoryGraphFromStories } = await import("./graph");
+    const baseGraph = createStoryGraphFromStories(dbStories.slice(0, 200));
+    
+    const rankedGraph = await rankGraphByScores({
+      graph: baseGraph,
+      sessionId: options?.sessionId,
+    });
     const recommendationResult = await buildRetrievalRecommendations({
       graph: rankedGraph,
       startStoryIds: recentSessionStories,
       topK: 15,
     });
 
+    return {
+      ...rankedGraph,
+      meta: {
+        cached: false,
+        storage: "mongodb-fallback",
+        plannedArchive: getPlannedS3Target(),
+        totalStoriesInDb: dbStories.length,
+        sourceMetricsCount: dbMetrics.length,
+        recommendations: recommendationResult.recommendations,
+        recommendationReasons: recommendationResult.reasons,
+        retrieval: recommendationResult.retrieval,
+      },
+    };
+  }
+
+  // Only block if we have absolutely nothing
+  const graph = await buildLiveGraph();
+  await cacheJson(GRAPH_CACHE_KEY, graph, GRAPH_CACHE_TTL_SECONDS);
+  const rankedGraph = await rankGraphByScores({
+    graph,
+    sessionId: options?.sessionId,
+  });
+  const recommendationResult = await buildRetrievalRecommendations({
+    graph: rankedGraph,
+    startStoryIds: recentSessionStories,
+    topK: 15,
+  });
+
   return {
     ...rankedGraph,
     meta: {
       cached: false,
-      storage: "redis",
+      storage: "live-blocking",
       plannedArchive: getPlannedS3Target(),
-      totalStoriesInDb: stories.length,
-      sourceMetricsCount: metrics.length,
+      totalStoriesInDb: dbStories.length,
+      sourceMetricsCount: dbMetrics.length,
       recommendations: recommendationResult.recommendations,
       recommendationReasons: recommendationResult.reasons,
       retrieval: recommendationResult.retrieval,

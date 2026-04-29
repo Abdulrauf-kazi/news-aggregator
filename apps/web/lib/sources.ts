@@ -191,6 +191,22 @@ export const SOURCE_DEFINITIONS: SourceDefinition[] = [
     tags: ["code", "security", "developer-signal"],
   },
   {
+    id: "x",
+    label: "X (Twitter)",
+    category: "news",
+    kind: "platform",
+    endpoint: "https://news.google.com/rss/search?q=X+Twitter+trending+news&hl=en-US&gl=US&ceid=US:en",
+    tags: ["social", "trending", "realtime"],
+  },
+  {
+    id: "telegram",
+    label: "Telegram",
+    category: "news",
+    kind: "platform",
+    endpoint: "https://news.google.com/rss/search?q=Telegram+news+channels+updates&hl=en-US&gl=US&ceid=US:en",
+    tags: ["social", "messenger", "broadcast"],
+  },
+  {
     id: "arxiv",
     label: "arXiv",
     category: "science",

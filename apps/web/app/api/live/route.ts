@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const forceRefresh = url.searchParams.get("refresh") === "1";
   const sessionId = extractSessionId(request, url) || createSessionId();
-
+  
   try {
     const snapshot = await getGraphSnapshot({
       forceRefresh,

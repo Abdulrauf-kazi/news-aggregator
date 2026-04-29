@@ -89,20 +89,20 @@ export function LiveNewsGraphPage({
       <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <div className="flex items-center gap-3 mb-4">
-            <span className="status-dot animate-pulse"></span>
-            <span className="tag">Matrix View</span>
+            <span className="status-dot"></span>
+            <span className="tag text-[#ff3e00]">Matrix View</span>
           </div>
-          <h1 className="font-headline text-4xl font-bold text-primary tracking-tight leading-none mb-3">
+          <h1 className="font-headline text-5xl font-black text-[#1c1917] tracking-tight leading-none mb-3 uppercase">
             RELATIONSHIP <br /> TOPOLOGY
           </h1>
-          <p className="text-sm text-secondary max-w-xl font-medium">
+          <p className="text-sm text-[#57534e] max-w-xl font-medium uppercase tracking-[0.2em]">
             Dynamic story-to-story linking based on semantic overlap and temporal proximity.
           </p>
         </div>
         <div className="flex gap-4">
           <button
             onClick={() => void refresh(true)}
-            className="px-6 py-3 bg-primary text-white font-headline text-xs tracking-widest uppercase transition-all hover:bg-accent"
+            className="px-6 py-3 bg-[#1c1917] text-white font-headline text-[10px] font-black uppercase tracking-widest transition-all hover:bg-[#ff3e00] rounded-lg shadow-lg"
             disabled={isRefreshing}
           >
             {isRefreshing ? "Syncing Topology..." : "Refresh Matrix"}
@@ -111,74 +111,88 @@ export function LiveNewsGraphPage({
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mb-6">
-        <section className="md:col-span-9 bento-shell rounded-sm p-2 bg-white/30 backdrop-blur-sm">
+        <section className="md:col-span-9 bento-shell rounded-[2rem] p-4 bg-white shadow-xl overflow-hidden">
           <div className="w-full h-[600px]">
             <NewsGraph nodes={data.nodes} edges={data.edges} />
           </div>
         </section>
 
         <section className="md:col-span-3 space-y-6">
-          <article className="bento-shell rounded-sm p-6 bg-white">
-            <p className="font-headline text-[10px] uppercase tracking-[0.2em] text-secondary mb-4">
+          <article className="bento-shell rounded-2xl p-8 shadow-sm">
+            <p className="font-headline text-[10px] uppercase tracking-[0.3em] text-[#a8a29e] font-black mb-6">
               Graph Density
             </p>
             <div className="space-y-6">
               <div>
-                <p className="text-[10px] font-headline text-secondary mb-1">NODES</p>
-                <p className="text-3xl font-headline font-bold text-primary">
+                <p className="text-[10px] font-headline text-[#57534e] font-bold uppercase tracking-widest mb-1">NODES</p>
+                <p className="text-4xl font-headline font-black text-[#1c1917]">
                   {data.nodes.filter((node) => node.type === "story").length}
                 </p>
               </div>
               <div>
-                <p className="text-[10px] font-headline text-secondary mb-1">EDGES</p>
-                <p className="text-3xl font-headline font-bold text-primary">{data.edges.length}</p>
+                <p className="text-[10px] font-headline text-[#57534e] font-bold uppercase tracking-widest mb-1">EDGES</p>
+                <p className="text-4xl font-headline font-black text-[#1c1917]">{data.edges.length}</p>
               </div>
               <div>
-                <p className="text-[10px] font-headline text-secondary mb-1">TOTAL STORIES</p>
-                <p className="text-3xl font-headline font-bold text-primary">{data.meta.totalStoriesInDb}</p>
+                <p className="text-[10px] font-headline text-[#57534e] font-bold uppercase tracking-widest mb-1">STREAMS</p>
+                <p className="text-4xl font-headline font-black text-[#1c1917]">{data.meta.totalStoriesInDb}</p>
               </div>
             </div>
           </article>
 
-          <article className="bento-shell rounded-sm p-6 bg-primary text-white">
-            <p className="font-headline text-[10px] uppercase tracking-[0.2em] text-white/60 mb-4">
+          <article className="bento-shell rounded-2xl p-8 bg-[#1c1917] text-white shadow-xl border-none">
+            <p className="font-headline text-[10px] uppercase tracking-[0.3em] text-white/50 font-black mb-6">
               Retrieval Vector
             </p>
-            <p className="text-sm font-headline font-bold text-accent uppercase mb-2">
+            <p className="text-[11px] font-headline font-black text-[#ff3e00] uppercase mb-3 tracking-widest">
               {data.meta.retrieval.mode}
             </p>
-            <p className="text-[10px] text-white/40 font-headline leading-relaxed uppercase">
-              Backend: {data.meta.retrieval.vectorBackend} <br />
-              Seeds: {data.meta.retrieval.graphSeedCount} <br />
-              Pool: {data.meta.retrieval.vectorCount}
-            </p>
+            <div className="space-y-1">
+               <p className="text-[10px] text-white/60 font-headline leading-relaxed uppercase font-bold">
+                 Backend: <span className="text-white">{data.meta.retrieval.vectorBackend}</span>
+               </p>
+               <p className="text-[10px] text-white/60 font-headline leading-relaxed uppercase font-bold">
+                 Seeds: <span className="text-white">{data.meta.retrieval.graphSeedCount}</span>
+               </p>
+               <p className="text-[10px] text-white/60 font-headline leading-relaxed uppercase font-bold">
+                 Pool: <span className="text-white">{data.meta.retrieval.vectorCount}</span>
+               </p>
+            </div>
           </article>
         </section>
       </div>
 
-      <section className="bento-shell rounded-sm p-8">
-        <p className="font-headline text-[10px] uppercase tracking-[0.2em] text-secondary mb-6">
-          Neural Pathway Recommendations
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+      <section className="bento-shell rounded-[2rem] p-10 shadow-sm">
+        <div className="flex items-center justify-between mb-8 pb-4 border-b border-[#f5f5f4]">
+           <h3 className="font-headline text-[11px] text-[#1c1917] uppercase font-black tracking-[0.3em] flex items-center gap-4">
+              <span className="w-2 h-2 bg-[#ff3e00] rounded-full shadow-[0_0_10px_rgba(255,62,0,0.5)]"></span>
+              Neural Pathway Recommendations
+           </h3>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
           {data.meta.recommendations
             .map((storyId) => data.stories.find((story) => story.id === storyId))
             .filter((story): story is StoryGraph["stories"][number] => Boolean(story))
             .slice(0, 4)
             .map((story) => (
-              <article key={story.id} className="premium-card rounded-sm p-5 group cursor-pointer border-t-2 border-t-accent">
-                <p className="text-[9px] font-headline font-bold text-accent uppercase mb-2">{story.topic}</p>
-                <h3 className="text-xs font-bold text-primary leading-snug line-clamp-3 mb-4 group-hover:text-accent transition-colors">
+              <article key={story.id} className="premium-card rounded-2xl p-6 group cursor-pointer border-l-4 border-l-[#ff3e00] shadow-sm hover:shadow-xl transition-all">
+                <div className="flex justify-between items-start mb-4">
+                   <span className="text-[9px] font-headline font-black text-[#ff3e00] uppercase tracking-widest">{story.topic}</span>
+                   <span className="material-symbols-outlined text-[14px] text-[#d6d3d1] group-hover:text-[#ff3e00]">hub</span>
+                </div>
+                <h3 className="text-[14px] font-headline font-bold text-[#1c1917] leading-tight line-clamp-3 mb-4 group-hover:text-[#ff3e00] transition-colors uppercase tracking-tight">
                   {story.title}
                 </h3>
-                <p className="text-[9px] text-secondary font-headline italic">
-                  Reason: {data.meta.recommendationReasons[story.id] ?? "Topological proximity"}
-                </p>
+                {data.meta.recommendationReasons[story.id] && (
+                  <p className="text-[10px] text-[#57534e] font-headline font-bold leading-relaxed border-t border-[#f5f5f4] pt-3">
+                    {data.meta.recommendationReasons[story.id]}
+                  </p>
+                )}
               </article>
             ))}
           {data.meta.recommendations.length === 0 && (
-            <div className="col-span-full py-12 border border-dashed border-[#d6d3d1] text-center">
-              <p className="text-[10px] font-headline text-secondary uppercase tracking-widest">
+            <div className="col-span-full py-20 border border-dashed border-[#d6d3d1] rounded-2xl text-center bg-[#fbfbf9]">
+              <p className="text-[10px] font-headline text-[#a8a29e] font-black uppercase tracking-[0.3em]">
                 Interact with the matrix to generate neural recommendations
               </p>
             </div>
