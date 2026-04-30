@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
+import { useSession, signOut } from "next-auth/react";
 
 export function Navbar() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const { data: session, status } = useSession();
+  const [showMenu, setShowMenu] = useState(false);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -37,7 +40,6 @@ export function Navbar() {
             <div className="hidden lg:flex items-center gap-6 font-headline font-bold text-[11px] uppercase tracking-widest">
               <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/">Home</Link>
               <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/news-graph">Network</Link>
-              <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/sources">Sources</Link>
               <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/bookmarks">Archive</Link>
             </div>
           </div>
@@ -62,6 +64,42 @@ export function Navbar() {
             >
               <span className="material-symbols-outlined text-[20px]">side_navigation</span>
             </button>
+
+            {status === "authenticated" && session?.user ? (
+              <div className="relative">
+                <button onClick={() => setShowMenu((s) => !s)} className="flex items-center gap-2 px-3 py-2 bg-white border border-[#d6d3d1] rounded-lg">
+                  {session.user.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={session.user.image} alt={session.user.name || "user"} className="w-7 h-7 rounded-full" />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-[#f5f5f4] flex items-center justify-center text-sm text-[#1c1917]">{(session.user.name || session.user.email || "U")[0]}</div>
+                  )}
+                </button>
+                {showMenu && (
+                  <div className="absolute right-0 mt-2 w-40 bg-white border border-[#d6d3d1] rounded-lg shadow-lg py-2 z-50">
+                    <Link href="/" className="block px-4 py-2 text-sm text-[#1c1917] hover:bg-[#f5f5f4]" onClick={() => setShowMenu(false)}>Home</Link>
+                    <Link href="/profile" className="block px-4 py-2 text-sm text-[#1c1917] hover:bg-[#f5f5f4]" onClick={() => setShowMenu(false)}>Profile</Link>
+                    <button onClick={() => { setShowMenu(false); signOut({ callbackUrl: "/" }); }} className="w-full text-left px-4 py-2 text-sm text-[#ef4444] hover:bg-[#fff5f5]">Sign out</button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <Link
+                  href="/sign-in"
+                  className="hidden md:flex items-center px-4 py-2 bg-white text-[#1c1917] border border-[#d6d3d1] text-[11px] font-headline font-bold uppercase tracking-widest rounded-lg hover:border-[#ff3e00] hover:text-[#ff3e00] transition-all shadow-sm"
+                >
+                  Sign In
+                </Link>
+
+                <Link
+                  href="/sign-up"
+                  className="hidden md:flex items-center px-4 py-2 bg-[#1c1917] text-white text-[11px] font-headline font-bold uppercase tracking-widest rounded-lg hover:bg-[#ff3e00] transition-all shadow-sm"
+                >
+                  Sign Up
+                </Link>
+              </>
+            )}
 
             <Link 
               href="/live"

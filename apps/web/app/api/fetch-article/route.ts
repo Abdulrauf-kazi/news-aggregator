@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
-import { JSDOM } from 'jsdom';
-import { Readability } from '@mozilla/readability';
 
 export async function GET(request: Request) {
+  // Dynamic imports prevent Turbopack from resolving jsdom's internal data
+  // files at build time, which would crash the static analysis phase.
+  const { JSDOM } = await import('jsdom');
+  const { Readability } = await import('@mozilla/readability');
+
   const { searchParams } = new URL(request.url);
   const targetUrl = searchParams.get('url');
 

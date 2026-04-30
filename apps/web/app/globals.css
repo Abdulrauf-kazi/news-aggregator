@@ -125,6 +125,21 @@ body {
   animation: pulse 2s infinite;
 }
 
+/* Line clamp helpers (utility parity for tailwind classes used in JSX) */
+.line-clamp-4 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+
+.line-clamp-5 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
+}
+
 @keyframes pulse {
   0% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.2); opacity: 0.7; }
@@ -174,9 +189,25 @@ body {
   margin-left: 4px;
 }
 
-.rabbit-loader-overlay {
+.lottie-loader-overlay {
   position: fixed;
   inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  z-index: 6000;
+  opacity: 1;
+  transition: opacity 0.6s ease, visibility 0.6s ease;
+}
+
+.lottie-loader-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.lottie-loader-card {
   display: flex;
   align-items: center;
   justify-content: center;

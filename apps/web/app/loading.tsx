@@ -1,9 +1,9 @@
-import { RabbitLoaderScene } from "../components/loader/RabbitLoaderScene";
+import { LottieLoader } from "../components/loader/LottieLoader";
 
 export default function Loading() {
   return (
-    <div className="rabbit-loader-overlay" role="status" aria-live="polite">
-      <RabbitLoaderScene />
+    <div role="status" aria-live="polite">
+      <LottieLoader autoHide={false} />
     </div>
   );
 }

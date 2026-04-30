@@ -52,6 +52,12 @@ export function LiveNewsGraphPage({
 }: {
   initialData: LivePayload;
 }) {
+  const getStorySummary = (story: StoryGraph["stories"][number]) => {
+    const trimmed = story.content?.trim();
+    if (trimmed) return trimmed;
+    const sources = story.sourceIds?.length ? story.sourceIds.slice(0, 3).join(", ") : "Global feed";
+    return `${story.title}. Topic: ${story.topic}. Sources: ${sources}.`;
+  };
   const [data, setData] = useState<LivePayload>(withMetaDefaults(initialData));
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -110,56 +116,66 @@ export function LiveNewsGraphPage({
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 mb-6">
-        <section className="md:col-span-9 bento-shell rounded-[2rem] p-4 bg-white shadow-xl overflow-hidden">
-          <div className="w-full h-[600px]">
+      <div className="grid grid-cols-1 md:grid-cols-12 auto-rows-[160px] gap-6 mb-8">
+        <section className="md:col-span-8 md:row-span-3 bento-shell rounded-[2rem] p-4 bg-white shadow-xl overflow-hidden">
+          <div className="w-full h-full min-h-[520px]">
             <NewsGraph nodes={data.nodes} edges={data.edges} />
           </div>
         </section>
 
-        <section className="md:col-span-3 space-y-6">
-          <article className="bento-shell rounded-2xl p-8 shadow-sm">
-            <p className="font-headline text-[10px] uppercase tracking-[0.3em] text-[#a8a29e] font-black mb-6">
-              Graph Density
-            </p>
-            <div className="space-y-6">
-              <div>
-                <p className="text-[10px] font-headline text-[#57534e] font-bold uppercase tracking-widest mb-1">NODES</p>
-                <p className="text-4xl font-headline font-black text-[#1c1917]">
-                  {data.nodes.filter((node) => node.type === "story").length}
-                </p>
-              </div>
-              <div>
-                <p className="text-[10px] font-headline text-[#57534e] font-bold uppercase tracking-widest mb-1">EDGES</p>
-                <p className="text-4xl font-headline font-black text-[#1c1917]">{data.edges.length}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-headline text-[#57534e] font-bold uppercase tracking-widest mb-1">STREAMS</p>
-                <p className="text-4xl font-headline font-black text-[#1c1917]">{data.meta.totalStoriesInDb}</p>
-              </div>
+        <article className="md:col-span-4 md:row-span-1 bento-shell rounded-2xl p-6 shadow-sm">
+          <p className="font-headline text-[10px] uppercase tracking-[0.3em] text-[#a8a29e] font-black mb-4">
+            Graph Density
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-[9px] font-headline text-[#57534e] font-bold uppercase tracking-widest mb-1">NODES</p>
+              <p className="text-3xl font-headline font-black text-[#1c1917]">
+                {data.nodes.filter((node) => node.type === "story").length}
+              </p>
             </div>
-          </article>
+            <div>
+              <p className="text-[9px] font-headline text-[#57534e] font-bold uppercase tracking-widest mb-1">EDGES</p>
+              <p className="text-3xl font-headline font-black text-[#1c1917]">{data.edges.length}</p>
+            </div>
+          </div>
+        </article>
 
-          <article className="bento-shell rounded-2xl p-8 bg-[#1c1917] text-white shadow-xl border-none">
-            <p className="font-headline text-[10px] uppercase tracking-[0.3em] text-white/50 font-black mb-6">
-              Retrieval Vector
-            </p>
-            <p className="text-[11px] font-headline font-black text-[#ff3e00] uppercase mb-3 tracking-widest">
-              {data.meta.retrieval.mode}
-            </p>
-            <div className="space-y-1">
-               <p className="text-[10px] text-white/60 font-headline leading-relaxed uppercase font-bold">
-                 Backend: <span className="text-white">{data.meta.retrieval.vectorBackend}</span>
-               </p>
-               <p className="text-[10px] text-white/60 font-headline leading-relaxed uppercase font-bold">
-                 Seeds: <span className="text-white">{data.meta.retrieval.graphSeedCount}</span>
-               </p>
-               <p className="text-[10px] text-white/60 font-headline leading-relaxed uppercase font-bold">
-                 Pool: <span className="text-white">{data.meta.retrieval.vectorCount}</span>
-               </p>
+        <article className="md:col-span-4 md:row-span-1 bento-shell rounded-2xl p-6 shadow-sm">
+          <p className="font-headline text-[10px] uppercase tracking-[0.3em] text-[#a8a29e] font-black mb-4">
+            Signal Streams
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-[9px] font-headline text-[#57534e] font-bold uppercase tracking-widest mb-1">STORIES</p>
+              <p className="text-3xl font-headline font-black text-[#1c1917]">{data.meta.totalStoriesInDb}</p>
             </div>
-          </article>
-        </section>
+            <div>
+              <p className="text-[9px] font-headline text-[#57534e] font-bold uppercase tracking-widest mb-1">SOURCES</p>
+              <p className="text-3xl font-headline font-black text-[#1c1917]">{data.meta.sourceMetricsCount}</p>
+            </div>
+          </div>
+        </article>
+
+        <article className="md:col-span-4 md:row-span-1 bento-shell rounded-2xl p-6 bg-[#1c1917] text-white shadow-xl border-none">
+          <p className="font-headline text-[10px] uppercase tracking-[0.3em] text-white/50 font-black mb-4">
+            Retrieval Vector
+          </p>
+          <p className="text-[11px] font-headline font-black text-[#ff3e00] uppercase mb-3 tracking-widest">
+            {data.meta.retrieval.mode}
+          </p>
+          <div className="space-y-1">
+            <p className="text-[10px] text-white/60 font-headline leading-relaxed uppercase font-bold">
+              Backend: <span className="text-white">{data.meta.retrieval.vectorBackend}</span>
+            </p>
+            <p className="text-[10px] text-white/60 font-headline leading-relaxed uppercase font-bold">
+              Seeds: <span className="text-white">{data.meta.retrieval.graphSeedCount}</span>
+            </p>
+            <p className="text-[10px] text-white/60 font-headline leading-relaxed uppercase font-bold">
+              Pool: <span className="text-white">{data.meta.retrieval.vectorCount}</span>
+            </p>
+          </div>
+        </article>
       </div>
 
       <section className="bento-shell rounded-[2rem] p-10 shadow-sm">
@@ -183,6 +199,9 @@ export function LiveNewsGraphPage({
                 <h3 className="text-[14px] font-headline font-bold text-[#1c1917] leading-tight line-clamp-3 mb-4 group-hover:text-[#ff3e00] transition-colors uppercase tracking-tight">
                   {story.title}
                 </h3>
+                <p className="text-[12px] text-[#57534e] leading-relaxed line-clamp-3 mb-4">
+                  {getStorySummary(story)}
+                </p>
                 {data.meta.recommendationReasons[story.id] && (
                   <p className="text-[10px] text-[#57534e] font-headline font-bold leading-relaxed border-t border-[#f5f5f4] pt-3">
                     {data.meta.recommendationReasons[story.id]}

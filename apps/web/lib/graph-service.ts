@@ -18,6 +18,9 @@ const TIME_DECAY_LAMBDA = Number(process.env.TIME_DECAY_LAMBDA ?? 0.08);
 const EXPLORATION_INJECTION_RATE = Number(
   process.env.EXPLORATION_INJECTION_RATE ?? 0.4,
 );
+const LIVE_GRAPH_TIMEOUT_MS = Number(
+  process.env.LIVE_GRAPH_TIMEOUT_MS ?? 15000,
+);
 
 export type GraphSnapshot = StoryGraph & {
   meta: {
@@ -387,6 +390,31 @@ const rankGraphByScores = async (input: {
   };
 };
 
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> => {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return promise;
+  }
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+};
+
 async function triggerBackgroundIngestion() {
   const { getRedisClient, cacheJson } = await import("./redis");
   const redis = getRedisClient();
@@ -499,8 +527,37 @@ export async function getGraphSnapshot(options?: {
   }
 
   // Only block if we have absolutely nothing
-  const graph = await buildLiveGraph();
-  await cacheJson(GRAPH_CACHE_KEY, graph, GRAPH_CACHE_TTL_SECONDS);
+  let graph: StoryGraph;
+  try {
+    graph = await withTimeout(
+      buildLiveGraph(),
+      LIVE_GRAPH_TIMEOUT_MS,
+      "buildLiveGraph",
+    );
+    await cacheJson(GRAPH_CACHE_KEY, graph, GRAPH_CACHE_TTL_SECONDS);
+  } catch (error) {
+    console.error("Failed to build live graph:", error);
+    const { createStoryGraph } = await import("./graph");
+    const fallback = createStoryGraph(42);
+    return {
+      ...fallback,
+      meta: {
+        cached: false,
+        storage: "fallback",
+        plannedArchive: null,
+        totalStoriesInDb: fallback.stories.length,
+        sourceMetricsCount: 0,
+        recommendations: [],
+        recommendationReasons: {},
+        retrieval: {
+          vectorBackend: "cosine",
+          vectorCount: 0,
+          graphSeedCount: 0,
+          mode: "graph",
+        },
+      },
+    };
+  }
   const rankedGraph = await rankGraphByScores({
     graph,
     sessionId: options?.sessionId,

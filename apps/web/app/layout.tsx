@@ -2,6 +2,7 @@
 import type { Metadata } from "next";
 import { Navbar } from "../components/layout/Navbar";
 import { Footer } from "../components/layout/Footer";
+import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -33,9 +34,11 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-surface font-body text-primary min-h-screen flex flex-col">
-        <Navbar />
-        <div className="flex-grow pt-16">{children}</div>
-        <Footer />
+        <Providers>
+          <Navbar />
+          <div className="flex-grow pt-16">{children}</div>
+          <Footer />
+        </Providers>
       </body>
     </html>
   );

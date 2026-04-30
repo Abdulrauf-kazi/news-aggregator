@@ -1,21 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import DOMPurify from "isomorphic-dompurify";
 import { NewsGraph } from "./news-graph";
+import HorizonSidebar from "./horizon-sidebar-v2";
 import type { StoryGraph } from "../lib/graph";
-import { RabbitLoaderScene } from "./loader/RabbitLoaderScene";
 import { AnimatePresence, motion } from "framer-motion";
 
 type LivePayload = StoryGraph & {
   meta: {
+    cached?: boolean;
+    storage?: string;
+    plannedArchive?: { bucket: string; region: string; prefix?: string } | null;
     totalStoriesInDb: number;
+    sourceMetricsCount?: number;
     recommendations: string[];
     recommendationReasons: Record<string, string>;
     retrieval: {
       vectorBackend: string;
+      vectorCount?: number;
       graphSeedCount: number;
+      mode?: "vector+graph" | "graph";
     };
     fetchedAt?: string;
     sessionId?: string;
@@ -39,32 +45,38 @@ const withMetaDefaults = (payload: LivePayload): LivePayload => {
   };
 };
 
-export function LiveHome({ initialData }: { initialData: LivePayload }) {
+export function LiveHome({ initialData, onNewsClick }: { initialData: LivePayload, onNewsClick: (item: any) => void }) {
   const [data, setData] = useState<LivePayload>(withMetaDefaults(initialData));
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [bookmarks, setBookmarks] = useState<string[]>([]);
   const [selectedGraphNodeId, setSelectedGraphNodeId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState("Feed"); 
-  const [sidebarSearch, setSidebarSearch] = useState("");
-  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
-  const [expandedStoryId, setExpandedStoryId] = useState<string | null>(null);
+  const [isSidebarVisible, setIsSidebarVisible] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(420);
+  const resizingRef = useRef(false);
   
-  const [showInitialLoader, setShowInitialLoader] = useState(true);
-  const [isExitingLoader, setIsExitingLoader] = useState(false);
-
   useEffect(() => {
-    const exitTimer = setTimeout(() => {
-      setIsExitingLoader(true);
-      const removeTimer = setTimeout(() => setShowInitialLoader(false), 800);
-      return () => clearTimeout(removeTimer);
-    }, 1000);
-
-    const handleToggle = () => setIsSidebarVisible(prev => !prev);
+    const handleToggle = () => setIsSidebarVisible((prev) => !prev);
     window.addEventListener("toggle-sidebar", handleToggle);
 
+    const onMouseMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const newWidth = Math.max(280, Math.min(900, window.innerWidth - e.clientX));
+      setSidebarWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      resizingRef.current = false;
+      document.body.style.cursor = "";
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+
     return () => {
-      clearTimeout(exitTimer);
       window.removeEventListener("toggle-sidebar", handleToggle);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
     };
   }, []);
 
@@ -91,37 +103,34 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
   }, [data.meta.sessionId]);
 
   const allStories = data.stories;
-  const socialSourceIds = ["github", "x", "telegram"];
-  const platformSourceIds = [...socialSourceIds, "polymarket"];
-
-  const sidebarStories = useMemo(() => {
-    return allStories.filter(s => 
-      s.sourceIds.some(id => socialSourceIds.includes(id)) &&
-      (s.title.toLowerCase().includes(sidebarSearch.toLowerCase()) || 
-       s.content?.toLowerCase().includes(sidebarSearch.toLowerCase()))
-    );
-  }, [allStories, sidebarSearch]);
+  const platformSourceIds = ["github", "x", "telegram", "polymarket"];
 
   const polymarketStories = useMemo(() => {
     return allStories.filter(s => 
-      s.sourceIds.includes("polymarket") &&
-      (s.title.toLowerCase().includes(sidebarSearch.toLowerCase()) || 
-       s.content?.toLowerCase().includes(sidebarSearch.toLowerCase()))
+      s.sourceIds.includes("polymarket")
     );
-  }, [allStories, sidebarSearch]);
+  }, [allStories]);
+
+  const polymarketItems = useMemo(() => {
+    return polymarketStories.slice(0, 6).map((story) => ({
+      id: story.id,
+      title: story.title,
+      source: "@polymarket",
+      score: story.score ?? 40,
+      timestamp: story.timestamp,
+      origin: "POLYMARKET",
+      url: story.url,
+    }));
+  }, [polymarketStories]);
 
   const mainFeedStories = useMemo(() => {
     return allStories.filter(s => !s.sourceIds.some(id => platformSourceIds.includes(id)));
   }, [allStories]);
 
-  const toggleBookmark = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    setBookmarks(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
   const selectedStory = useMemo(() => {
-    return allStories.find(s => s.id === selectedGraphNodeId);
-  }, [allStories, selectedGraphNodeId]);
+    if (!selectedGraphNodeId) return null;
+    return data.stories.find((s) => s.id === selectedGraphNodeId) || null;
+  }, [selectedGraphNodeId, data.stories]);
 
   const openOriginal = (story: any) => {
     const url = getArticleUrl(story);
@@ -129,6 +138,13 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
       window.open(url, "_blank", "noopener,noreferrer");
     }
   };
+
+  const getStorySummary = useCallback((story: StoryGraph["stories"][number]) => {
+    const trimmed = story.content?.trim();
+    if (trimmed) return trimmed;
+    const sources = story.sourceIds?.length ? story.sourceIds.slice(0, 3).join(", ") : "Global feed";
+    return `${story.title}. Topic: ${story.topic}. Sources: ${sources}.`;
+  }, []);
 
   const recommendedStories = useMemo(() => {
     if (!data.meta.recommendations || data.meta.recommendations.length === 0) {
@@ -140,22 +156,10 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
       .slice(0, 4);
   }, [allStories, data.meta.recommendations, selectedGraphNodeId]);
 
+  
+
   return (
     <div className="min-h-screen text-[#1c1917] font-body bg-[#efefec] transition-colors duration-500">
-      <AnimatePresence>
-        {showInitialLoader && (
-          <motion.div
-            key="initial-loader"
-            className="rabbit-loader-overlay bg-[#efefec] z-[5000]"
-            initial={{ opacity: 1 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <RabbitLoaderScene isExiting={isExitingLoader} />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       <div className="flex h-[calc(100vh-64px)] overflow-hidden">
         {/* Main Terminal Workspace (Light/Cream) */}
         <main className="flex-1 overflow-y-auto custom-scrollbar">
@@ -197,19 +201,25 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
                   </h3>
                   <p className="text-[10px] font-headline text-[#a8a29e] uppercase font-bold tracking-widest">{mainFeedStories.length} Global Signals Linked</p>
                </div>
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-                  {mainFeedStories.map((story) => (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {mainFeedStories.map((story) => (
                     <article 
                       key={story.id} 
                       onClick={() => setSelectedGraphNodeId(story.id)} 
-                      className="premium-card rounded-2xl p-7 cursor-pointer group flex flex-col h-full bg-white shadow-sm border border-[#d6d3d1] hover:border-[#ff3e00] transition-all hover:shadow-xl"
+                   className="premium-card rounded-2xl p-6 cursor-pointer group flex flex-col bg-white shadow-sm border border-[#d6d3d1] hover:border-[#ff3e00] transition-all hover:shadow-xl"
                     >
                        <div className="flex justify-between items-start mb-5">
                           <span className="tag bg-[#f5f5f4] border-[#d6d3d1] text-[#57534e] text-[9px] font-black uppercase tracking-widest">{story.topic}</span>
                           <span className="text-[#a8a29e] text-[10px] font-headline font-bold">{new Date(story.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                        </div>
-                       <h4 className="font-headline font-bold text-[#1c1917] text-[16px] mb-4 group-hover:text-[#ff3e00] transition-colors leading-tight line-clamp-3 uppercase tracking-tight">{story.title}</h4>
-                       <p className="text-[13px] text-[#57534e] line-clamp-5 leading-relaxed font-medium mb-6">{story.content || "Semantic data pending extraction from node network..."}</p>
+                    <div className="min-h-0">
+                      <h4 className="font-headline font-bold text-[#1c1917] text-[15px] mb-2 group-hover:text-[#ff3e00] transition-colors leading-tight line-clamp-2 uppercase tracking-tight">
+                        {story.title || "Signal pending classification"}
+                      </h4>
+                      <p className="text-[12px] text-[#57534e] line-clamp-3 leading-relaxed font-medium mb-5">
+                        {getStorySummary(story)}
+                      </p>
+                    </div>
                        <div className="mt-auto pt-5 border-t border-[#f5f5f4] flex justify-between items-center">
                           <span className="text-[9px] font-headline font-black text-[#a8a29e] uppercase tracking-widest">{story.sourceIds?.[0] || "NETWORK"}</span>
                           <span className="material-symbols-outlined text-[18px] text-[#d6d3d1] group-hover:text-[#ff3e00] transition-colors">arrow_right_alt</span>
@@ -224,74 +234,39 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
         {/* Intelligence Sidebar (CREAM/LIGHT UI) */}
         <AnimatePresence>
         {isSidebarVisible && (
+          <>
+          <div
+            onMouseDown={(e) => {
+              resizingRef.current = true;
+              document.body.style.cursor = "col-resize";
+              window.addEventListener("mousemove", (ev) => {
+                if (!resizingRef.current) return;
+                const newWidth = Math.max(280, Math.min(900, window.innerWidth - ev.clientX));
+                setSidebarWidth(newWidth);
+              });
+              window.addEventListener("mouseup", () => {
+                resizingRef.current = false;
+                document.body.style.cursor = "";
+              });
+            }}
+            className="z-50 bg-transparent hover:bg-[#0000000a] cursor-col-resize"
+            style={{ width: 6 }}
+          />
+
           <motion.aside 
             initial={{ x: 420 }} animate={{ x: 0 }} exit={{ x: 420 }} transition={{ type: "spring", damping: 30, stiffness: 300 }}
-            className="w-[420px] bg-white border-l border-[#d6d3d1] flex flex-col z-[100] shadow-2xl"
+            className="bg-white border-l border-[#d6d3d1] flex flex-col z-[100] shadow-2xl"
+            style={{ width: sidebarWidth }}
           >
-            <div className="sidebar-tabs-horizontal">
-              <button className={`sidebar-tab-h ${activeTab === "Feed" ? "active" : ""}`} onClick={() => setActiveTab("Feed")}>Feed</button>
-              <button className={`sidebar-tab-h ${activeTab === "Whale Tracker" ? "active" : ""}`} onClick={() => setActiveTab("Whale Tracker")}>Whale Tracker</button>
-              <button className={`sidebar-tab-h ${activeTab === "Flights" ? "active" : ""}`} onClick={() => setActiveTab("Flights")}>Flights <span className="tab-count">(8)</span></button>
-            </div>
-
             <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#fcfcfc] p-4">
-              {activeTab === "Feed" ? (
-                <>
-                  <div className="flex items-center gap-3 mb-6 px-1">
-                    <div className="flex bg-[#f5f5f4] border border-[#d6d3d1] rounded-xl p-1 shadow-inner">
-                       <button className="w-9 h-9 flex items-center justify-center text-[#ff3e00] bg-white rounded-lg shadow-sm border border-[#d6d3d1]"><span className="material-symbols-outlined text-[20px]">grid_view</span></button>
-                       <button className="w-9 h-9 flex items-center justify-center text-[#a8a29e] hover:text-[#1c1917] transition-colors"><span className="material-symbols-outlined text-[20px]">public</span></button>
-                    </div>
-                    <div className="flex-1 bg-white border border-[#d6d3d1] rounded-xl flex items-center px-4 h-11 shadow-sm focus-within:border-[#ff3e00] transition-all">
-                       <span className="material-symbols-outlined text-[18px] text-[#a8a29e] mr-3">search</span>
-                       <input 
-                         value={sidebarSearch} 
-                         onChange={e => setSidebarSearch(e.target.value)} 
-                         placeholder="Filter stream..." 
-                         className="bg-transparent border-none text-[13px] text-[#1c1917] outline-none w-full font-headline font-bold" 
-                       />
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 mb-8 px-1">
-                    <button className="filter-pill border-l-[#ff3e00] text-[#ff3e00] bg-white px-4 py-2 text-[10px] font-black tracking-widest uppercase">Critical</button>
-                    <button className="filter-pill border-l-[#f97316] text-[#f97316] bg-white px-4 py-2 text-[10px] font-black tracking-widest uppercase">High</button>
-                    <button className="filter-pill border-l-[#22c55e] text-[#22c55e] bg-white px-4 py-2 text-[10px] font-black tracking-widest uppercase">Low</button>
-                  </div>
-
-                  <div className="space-y-4">
-                    {sidebarStories.map((story, i) => (
-                      <article key={story.id} className="feed-card group cursor-pointer border border-[#d6d3d1] bg-white p-5 rounded-2xl hover:border-[#ff3e00] transition-all" onClick={() => setSelectedGraphNodeId(story.id)}>
-                        <div className="flex items-center gap-3 mb-4">
-                          <span className="source-badge font-headline">NETWORK</span>
-                          <span className="impact-badge uppercase">Low</span>
-                          <span className="aggregator-tag uppercase font-black">Aggregator</span>
-                          <span className="text-[#a8a29e] text-[9px] font-headline ml-auto">now</span>
-                        </div>
-                        <h4 className="feed-card-title text-[14px] group-hover:text-[#ff3e00] transition-colors line-clamp-2 uppercase tracking-tight font-black">{story.title}</h4>
-                        <p className={`feed-card-summary text-[12px] text-[#57534e] font-medium leading-relaxed mt-3 ${expandedStoryId === story.id ? '' : 'line-clamp-2'}`}>
-                          {story.content || "Node analytics pending deeper semantic extraction..."}
-                        </p>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); setExpandedStoryId(expandedStoryId === story.id ? null : story.id); }}
-                          className="text-[#ff3e00] text-[9px] font-black mt-4 uppercase tracking-[0.2em] flex items-center gap-2 hover:translate-x-1 transition-all"
-                        >
-                          {expandedStoryId === story.id ? 'Collapse Data' : 'Deeper Analysis'}
-                          <span className="material-symbols-outlined text-[12px]">trending_flat</span>
-                        </button>
-                      </article>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                 <div className="p-20 text-center text-[#a8a29e] font-headline uppercase text-[12px] tracking-[0.3em] opacity-40">System Idle...</div>
-              )}
+              <HorizonSidebar onNewsClick={onNewsClick} />
             </div>
 
             <div className="p-6 bg-white border-t border-[#d6d3d1]">
               <button className="w-full py-4 bg-[#1c1917] text-white font-headline text-[11px] font-black uppercase tracking-[0.3em] rounded-xl hover:bg-[#ff3e00] transition-all shadow-xl active:scale-[0.98]">Share Intelligence Brief</button>
             </div>
           </motion.aside>
+          </>
         )}
         </AnimatePresence>
       </div>
@@ -329,7 +304,7 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
                 <div className="bg-white border-l-[6px] border-l-[#ff3e00] border border-[#d6d3d1] rounded-[2rem] p-16 shadow-2xl relative">
                    <p className="text-[10px] font-headline font-black text-[#a8a29e] uppercase tracking-[0.4em] mb-12">Primary Signal Data</p>
                    <div className="font-headline text-[22px] font-bold text-[#1c1917] leading-relaxed mb-16">
-                      {selectedStory.content || "Semantic node data extraction successful. Intelligence markers show high correlation with network trajectories. Primary source verification complete."}
+                     {getStorySummary(selectedStory)}
                    </div>
                    
                    <div className="pt-10 border-t border-[#f5f5f4] flex justify-between items-center font-headline text-[10px] text-[#a8a29e] uppercase font-bold tracking-widest">

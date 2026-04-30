@@ -50,8 +50,27 @@ RUN bun install --frozen-lockfile
 # Now copy the full source code and run the build
 COPY --from=pruner /app/out/full/ .
 
-# Build the Next.js app (Turbo handles building package dependencies first)
-RUN bun run turbo run build --filter=web
+# Provide dummy placeholder values for env vars that Next.js references
+# at build time. These are NOT used at runtime — real values are injected
+# via `docker run --env-file`. Without these, the build crashes because
+# Next.js validates env vars during compilation.
+ENV REDIS_URL="redis://placeholder:6379" \
+    HUGGINGFACE_API_KEY="placeholder" \
+    FINNHUB_API_KEY="placeholder" \
+    GRAPH_CACHE_TTL_SECONDS="20" \
+    SESSION_TTL_SECONDS="2700" \
+    SESSION_SOFT_DECAY_WINDOW_SECONDS="1200" \
+    TIME_DECAY_LAMBDA="0.08" \
+    EXPLORATION_INJECTION_RATE="0.2" \
+    EMBEDDING_MODEL="sentence-transformers/all-MiniLM-L6-v2" \
+    EMBEDDING_DIM="384" \
+    EMBEDDING_CACHE_TTL_SECONDS="604800" \
+    VECTOR_SEARCH_TOP_K="5"
+
+# Build the Next.js app.
+# - Use `bunx turbo` directly (turbo is a devDep, not a root script)
+# - --env-mode=loose: don't fail if some globalEnv vars are missing
+RUN bunx turbo run build --filter=web --env-mode=loose
 
 
 # ─────────────────────────────────────────────────────────────
