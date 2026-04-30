@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import { getDb } from "./lib/mongodb";
 
 const nextAuthResult = NextAuth({
+  trustHost: true, // Included from incoming changes for deployment stability
   adapter: MongoDBAdapter(clientPromise),
   session: { strategy: "jwt" },
   secret: process.env.AUTH_SECRET || "fallback-secret-for-dev-only-change-in-prod",

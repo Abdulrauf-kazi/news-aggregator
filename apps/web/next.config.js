@@ -1,24 +1,20 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Required: Produces a minimal standalone build for Docker deployment.
-  output: 'standalone',
+  output: 'standalone', // Required for Docker deployment
 
   typescript: {
-    // FIXED: Bypasses TypeScript validation to stop the "Failed to type check" errors.
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: true, // Prevents build failure on type mismatches
   },
 
   eslint: {
-    // FIXED: Bypasses linting checks so the build won't fail on style warnings.
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: true, // Prevents build failure on linting warnings
   },
 
   images: {
-    // Required for loading user profile images.
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'lh3.googleusercontent.com',
+        hostname: 'lh3.googleusercontent.com', // Required for Google profile photos
       },
     ],
   },
