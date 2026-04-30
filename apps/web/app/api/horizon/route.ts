@@ -1,6 +1,7 @@
 import Parser from "rss-parser";
 import { NextResponse } from "next/server";
 
+// Define the shape of items for the Horizon sidebar
 type HorizonItem = {
   id: string;
   title: string;
@@ -25,6 +26,9 @@ const rssParser = new Parser({
   },
 });
 
+/**
+ * Normalizes various date formats to ISO strings
+ */
 const toIso = (value?: number | string | null) => {
   if (!value) {
     return new Date().toISOString();
@@ -39,21 +43,21 @@ const toIso = (value?: number | string | null) => {
   return new Date(parsed).toISOString();
 };
 
+/**
+ * Keeps scores within a consistent range for UI importance tags[cite: 1]
+ */
 const clampScore = (score: number) => Math.max(5, Math.min(500, score));
 
 const fetchHackerNews = async (): Promise<HorizonItem[]> => {
   const idsRes = await fetch(HN_TOP_STORIES, { next: { revalidate: 120 } });
-  if (!idsRes.ok) {
-    return [];
-  }
+  if (!idsRes.ok) return [];
+
   const ids = (await idsRes.json()) as number[];
   const topIds = ids.slice(0, 10);
   const items = await Promise.all(
     topIds.map(async (id) => {
       const res = await fetch(HN_ITEM(id), { next: { revalidate: 120 } });
-      if (!res.ok) {
-        return null;
-      }
+      if (!res.ok) return null;
       return (await res.json()) as {
         id: number;
         title?: string;
@@ -65,22 +69,22 @@ const fetchHackerNews = async (): Promise<HorizonItem[]> => {
     }),
   );
 
-  return items
-    .map((item) => {
-      if (!item?.title) {
-        return null;
-      }
-      return {
+  // FIXED: Using an explicit loop prevents TypeScript null-assignment errors[cite: 1]
+  const results: HorizonItem[] = [];
+  for (const item of items) {
+    if (item && item.title) {
+      results.push({
         id: `hn-${item.id}`,
         title: item.title,
         source: `@${item.by || "hackernews"}`,
         score: clampScore(item.score ?? 40),
         timestamp: toIso(item.time ?? null),
-        origin: "HACKER NEWS" as const,
+        origin: "HACKER NEWS",
         url: item.url || `https://news.ycombinator.com/item?id=${item.id}`,
-      };
-    })
-    .filter((item): item is HorizonItem => Boolean(item));
+      });
+    }
+  }
+  return results;
 };
 
 const fetchReddit = async (): Promise<HorizonItem[]> => {
@@ -88,9 +92,8 @@ const fetchReddit = async (): Promise<HorizonItem[]> => {
     headers: { "User-Agent": "news-aggregator" },
     next: { revalidate: 120 },
   });
-  if (!res.ok) {
-    return [];
-  }
+  if (!res.ok) return [];
+
   const payload = (await res.json()) as {
     data?: {
       children?: Array<{
@@ -101,29 +104,29 @@ const fetchReddit = async (): Promise<HorizonItem[]> => {
           score?: number;
           created_utc?: number;
           permalink?: string;
-          subreddit?: string;
         };
       }>;
     };
   };
 
-  return (payload.data?.children ?? [])
-    .map((child) => {
-      const item = child.data;
-      if (!item?.title || !item.id) {
-        return null;
-      }
-      return {
+  // FIXED: Using an explicit loop prevents TypeScript null-assignment errors[cite: 1]
+  const results: HorizonItem[] = [];
+  const children = payload.data?.children ?? [];
+  for (const child of children) {
+    const item = child.data;
+    if (item && item.title && item.id) {
+      results.push({
         id: `reddit-${item.id}`,
         title: item.title,
         source: item.author ? `u/${item.author}` : "u/reddit",
         score: clampScore(item.score ?? 30),
         timestamp: toIso(item.created_utc ?? null),
-        origin: "REDDIT" as const,
+        origin: "REDDIT",
         url: item.permalink ? `https://www.reddit.com${item.permalink}` : undefined,
-      };
-    })
-    .filter((item): item is HorizonItem => Boolean(item));
+      });
+    }
+  }
+  return results;
 };
 
 const fetchTelegram = async (): Promise<HorizonItem[]> => {
@@ -137,39 +140,61 @@ const fetchTelegram = async (): Promise<HorizonItem[]> => {
       },
     );
     const feed = await rssParser.parseString(xml);
-    return (feed.items ?? []).slice(0, 10).map((item, idx) => {
+    const results: HorizonItem[] = [];
+
+    const items = (feed.items ?? []).slice(0, 10);
+    for (const item of items) {
       const title = item.title || "Telegram update";
       const baseScore = 24 + (title.length % 90);
-      return {
-        id: `telegram-${item.guid || idx}`,
+      results.push({
+        id: `telegram-${item.guid || Math.random().toString(36).slice(2)}`,
         title,
         source: "@telegram",
         score: clampScore(baseScore),
         timestamp: toIso(item.isoDate || item.pubDate || null),
-        origin: "TELEGRAM" as const,
+        origin: "TELEGRAM",
         url: item.link || undefined,
-      };
-    });
-  } catch {
+      });
+    }
+    return results;
+  } catch (error) {
+    console.error("Telegram fetch error:", error);
     return [];
   }
 };
 
+/**
+ * Main API handler that aggregates and returns sorted signals[cite: 1]
+ */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const params = url.searchParams;
   const offset = Number(params.get("offset") || "0");
   const limit = Number(params.get("limit") || "15");
 
-  const [hn, reddit, telegram] = await Promise.all([
-    fetchHackerNews(),
-    fetchReddit(),
-    fetchTelegram(),
-  ]);
+  try {
+    const [hn, reddit, telegram] = await Promise.all([
+      fetchHackerNews(),
+      fetchReddit(),
+      fetchTelegram(),
+    ]);
 
-  const all = [...hn, ...reddit, ...telegram].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
+    const all = [...hn, ...reddit, ...telegram].sort(
+      (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)
+    );
 
-  const items = all.slice(offset, offset + limit);
+    const items = all.slice(offset, offset + limit);
 
-  return NextResponse.json({ items, offset, limit, total: all.length });
+    return NextResponse.json({
+      items,
+      offset,
+      limit,
+      total: all.length,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Internal server error fetching signals" },
+      { status: 500 }
+    );
+  }
 }

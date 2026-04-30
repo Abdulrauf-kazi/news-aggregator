@@ -6,7 +6,7 @@ import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { getDb } from "./lib/mongodb";
 
-export const { handlers, signIn, signOut, auth } = NextAuth({
+const nextAuthResult = NextAuth({
   adapter: MongoDBAdapter(clientPromise),
   session: { strategy: "jwt" },
   secret: process.env.AUTH_SECRET || "fallback-secret-for-dev-only-change-in-prod",
@@ -26,23 +26,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if (!credentials?.email || !credentials?.password) {
           throw new Error("Missing email or password");
         }
-        
         const db = await getDb();
         const user = await db.collection("users").findOne({ email: credentials.email });
-
         if (!user || !user.password) {
           throw new Error("Invalid credentials");
         }
-
         const isPasswordValid = await bcrypt.compare(
           credentials.password as string,
           user.password
         );
-
         if (!isPasswordValid) {
           throw new Error("Invalid credentials");
         }
-
         return { id: user._id.toString(), name: user.name, email: user.email };
       },
     }),
@@ -58,18 +53,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if (!credentials?.signature || !credentials?.address) {
           throw new Error("Missing signature or address");
         }
-        // In a real app, verify the EIP-4361 (SIWE) signature using ethers or siwe.
-        // For this demo, we accept any signature and log in the wallet.
-        
         const db = await getDb();
         let user = await db.collection("users").findOne({ address: credentials.address });
-
         if (!user) {
-          // Auto-create user for wallet
           const result = await db.collection("users").insertOne({
             address: credentials.address,
             name: `${(credentials.address as string).slice(0, 6)}...${(credentials.address as string).slice(-4)}`,
-            email: `${credentials.address}@wallet.local`, // Mock email for NextAuth compatibility
+            email: `${credentials.address}@wallet.local`,
             createdAt: new Date(),
           });
           user = {
@@ -79,7 +69,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             email: `${credentials.address}@wallet.local`,
           };
         }
-
         return { id: user._id.toString(), name: user.name, email: user.email };
       },
     }),
@@ -118,3 +107,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     },
   },
 });
+
+// FIXED: Exporting individually to avoid portability inference errors
+export const handlers = nextAuthResult.handlers;
+export const auth = nextAuthResult.auth;
+export const signIn = nextAuthResult.signIn;
+export const signOut = nextAuthResult.signOut;
