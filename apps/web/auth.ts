@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import { getDb } from "./lib/mongodb";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true,
   adapter: MongoDBAdapter(clientPromise),
   session: { strategy: "jwt" },
   secret: process.env.AUTH_SECRET || "fallback-secret-for-dev-only-change-in-prod",
