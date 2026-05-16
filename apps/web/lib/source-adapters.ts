@@ -176,19 +176,53 @@ const fetchRssStories = async (
       .slice(0, STORIES_PER_SOURCE)
       .map((item, idx) => {
         const url = item.link || item.guid || (item as any).uri;
-        const content = item.contentSnippet || item.content || item.summary || (item as any).description;
+        const rawContent = item.contentSnippet || item.content || item.summary || (item as any).description || '';
+        const content = cleanText(rawContent);
+        const title = cleanText(item.title || "RSS item");
+        
         return createStory(
           source.id,
           item.guid || item.link || `${idx}`,
-          item.title || "RSS item",
+          title,
           item.isoDate || item.pubDate,
           ["rss2json"],
-          content,
+          content && content !== title ? content : undefined,
           url
         );
       });
   } catch (e) {
     console.warn(`RSS parse failed for ${source.id}:`, e);
+    return [];
+  }
+};
+
+const fetchGoogleNewsRssStories = async (
+  source: SourceDefinition,
+): Promise<StoryNode[]> => {
+  try {
+    const googleNewsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(source.label || source.id)}&hl=en-US&gl=US&ceid=US:en`;
+    const xml = await requestText(googleNewsUrl);
+    const feed = await rssParser.parseString(xml);
+    return (feed.items || [])
+      .slice(0, STORIES_PER_SOURCE)
+      .map((item, idx) => {
+        const url = item.link || item.guid || (item as any).uri;
+        const rawContent = item.contentSnippet || item.content || item.summary || (item as any).description || '';
+        const content = cleanText(rawContent);
+        const title = cleanText(item.title || "Google News item");
+        
+        return createStory(
+          source.id,
+          item.guid || item.link || `gn-${idx}`,
+          title,
+          item.isoDate || item.pubDate,
+          ["google-news", "rss-atom"],
+          content && content !== title ? content : undefined,
+          url
+        );
+      });
+  } catch (e) {
+    console.warn(`Google News RSS failed for ${source.id}:`, e);
     return [];
   }
 };
@@ -869,6 +903,23 @@ const fetchStoriesForSource = async (
       };
     }
 
+    // Try Google News RSS as fallback before using placeholders
+    const googleNewsStories = await fetchGoogleNewsRssStories(source);
+    if (googleNewsStories.length > 0) {
+      return {
+        stories: googleNewsStories,
+        metric: {
+          sourceId: source.id,
+          sourceLabel: source.label,
+          endpoint: source.endpoint,
+          ok: true,
+          mode: "google-news-fallback",
+          storyCount: googleNewsStories.length,
+          lastFetchedAt: now,
+        },
+      };
+    }
+
     const fallbackStories = fallbackForSource(source);
     return {
       stories: fallbackStories,
@@ -884,6 +935,27 @@ const fetchStoriesForSource = async (
       },
     };
   } catch (error) {
+    // Try Google News RSS as fallback before using placeholders
+    try {
+      const googleNewsStories = await fetchGoogleNewsRssStories(source);
+      if (googleNewsStories.length > 0) {
+        return {
+          stories: googleNewsStories,
+          metric: {
+            sourceId: source.id,
+            sourceLabel: source.label,
+            endpoint: source.endpoint,
+            ok: true,
+            mode: "google-news-fallback",
+            storyCount: googleNewsStories.length,
+            lastFetchedAt: now,
+          },
+        };
+      }
+    } catch {
+      // Ignore Google News fallback errors
+    }
+    
     const fallbackStories = fallbackForSource(source);
     return {
       stories: fallbackStories,
