@@ -1,11 +1,13 @@
 # Active Context
 
 ## Current Focus
-- Resolving UI bugs in the live news graph to ensure interactions trigger neural recommendations.
+- Fixed detailed news rendering, bookmarking, and 'READ ORIGINAL' functionality in the live news dashboard.
 
 ## Recent Changes
-- Fixed click detection in `news-graph.tsx` by accurately tracking pointer down events (`pointerDownMetaRef`).
-- Implemented node click handler in `live-news-graph-page.tsx` that sends a `POST /api/live` request to record interactions and then refreshes the data to fetch neural pathway recommendations.
+- Modified `live-home.tsx` to fetch the full article details via `/api/fetch-article` for the selected story.
+- Updated the node analysis overlay in `live-home.tsx` to render detailed news content (HTML, text, and images).
+- Implemented functional local state toggle for bookmarking news items.
+- Fixed 'READ ORIGINAL' button behavior to gracefully fallback to Google Search when the direct article `url` is missing from the mocked/graph data.
 
 ## Next Steps
-- Keep monitoring the interactions and ensuring the interaction-based recommendations provide relevant story suggestions.
+- Continue monitoring user feedback on the node analysis interactions and detailed article rendering.
