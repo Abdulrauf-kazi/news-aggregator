@@ -249,12 +249,12 @@ export function NewsGraph({
         const breath = Math.sin(time * 1.5 + (node.phaseOffset || 0)) * 1.5;
         const base = node.baseSize || 5;
         const radius = isDirectlyActive ? 14 : isNeighborActive ? 10 : Math.max(3, base + breath);
-        const color = isDirectlyActive ? "#ff3e00" : isNeighborActive ? "#0a0a0a" : (node.color || "#a8a29e");
+        const color = node.color || "#a8a29e";
         
         // Premium drop shadows (adjusted for zoom scale)
         if (!isDimmed) {
           ctx.shadowBlur = (isDirectlyActive ? 15 : 6) / transform.k;
-          ctx.shadowColor = isDirectlyActive ? "rgba(255, 62, 0, 0.4)" : "rgba(0, 0, 0, 0.15)";
+          ctx.shadowColor = isDirectlyActive ? color : "rgba(0, 0, 0, 0.15)";
           ctx.shadowOffsetY = 2 / transform.k;
         } else {
           ctx.shadowBlur = 0;
@@ -266,6 +266,13 @@ export function NewsGraph({
         ctx.fillStyle = color;
         ctx.globalAlpha = isDimmed ? 0.15 : 1;
         ctx.fill();
+        
+        // Add a premium stroke for the active node
+        if (isDirectlyActive) {
+          ctx.lineWidth = 2.5 / transform.k;
+          ctx.strokeStyle = "#171717";
+          ctx.stroke();
+        }
         
         // Aesthetic inner dot
         if (!isDimmed && radius > 5) {
@@ -343,6 +350,7 @@ export function NewsGraph({
     const clientX = e.clientX - rect.left;
     const clientY = e.clientY - rect.top;
     lastPointerRef.current = { x: clientX, y: clientY };
+    pointerDownMetaRef.current = { x: clientX, y: clientY, time: Date.now() };
     
     const worldPos = screenToWorld(clientX, clientY);
     
@@ -448,7 +456,7 @@ export function NewsGraph({
       const dist = Math.sqrt(dx * dx + dy * dy);
       const time = Date.now() - pointerDownMetaRef.current.time;
 
-      if (dist < 5 && time < 300) {
+      if (dist < 15 && time < 800) {
         const worldPos = screenToWorld(clientX, clientY);
         const { nodes } = dataRef.current;
         const transform = transformRef.current;

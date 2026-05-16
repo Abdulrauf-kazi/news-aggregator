@@ -61,14 +61,17 @@ export function LiveNewsGraphPage({
   const [data, setData] = useState<LivePayload>(withMetaDefaults(initialData));
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  const [localSessionId] = useState(() => `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+  const activeSessionId = data.meta.sessionId || localSessionId;
+
   const refresh = useCallback(
     async (force = false) => {
       setIsRefreshing(true);
       try {
         const res = await fetch(force ? "/api/live?refresh=1" : "/api/live", {
           cache: "no-store",
-          headers: data.meta.sessionId
-            ? { "x-session-id": data.meta.sessionId }
+          headers: activeSessionId
+            ? { "x-session-id": activeSessionId }
             : undefined,
         });
         if (!res.ok) {
@@ -80,8 +83,41 @@ export function LiveNewsGraphPage({
         setIsRefreshing(false);
       }
     },
-    [data.meta.sessionId],
+    [activeSessionId],
   );
+
+  const handleNodeClick = useCallback(async (nodeId: string) => {
+    const node = data.nodes.find((n) => n.id === nodeId);
+    if (!node || node.type !== "story") return;
+
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (activeSessionId) {
+        headers["x-session-id"] = activeSessionId;
+      }
+      
+      const response = await fetch("/api/live", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          eventType: "click",
+          storyId: nodeId,
+          topic: node.topic,
+        }),
+      });
+      
+      if (!response.ok) {
+        console.error("POST /api/live failed with status", response.status);
+      }
+      
+      // Refresh to fetch new recommendations
+      void refresh(false);
+    } catch (e) {
+      console.error("Failed to record interaction", e);
+    }
+  }, [data.nodes, activeSessionId, refresh]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -119,7 +155,7 @@ export function LiveNewsGraphPage({
       <div className="grid grid-cols-1 md:grid-cols-12 auto-rows-[160px] gap-6 mb-8">
         <section className="md:col-span-8 md:row-span-3 bento-shell rounded-[2rem] p-4 bg-white shadow-xl overflow-hidden">
           <div className="w-full h-full min-h-[520px]">
-            <NewsGraph nodes={data.nodes} edges={data.edges} />
+            <NewsGraph nodes={data.nodes} edges={data.edges} onNodeClick={handleNodeClick} />
           </div>
         </section>
 
@@ -157,7 +193,7 @@ export function LiveNewsGraphPage({
           </div>
         </article>
 
-        <article className="md:col-span-4 md:row-span-1 bento-shell rounded-2xl p-6 bg-[#1c1917] text-white shadow-xl border-none">
+        <article className="md:col-span-4 md:row-span-1 rounded-2xl p-6 bg-[#1c1917] text-white shadow-xl border-none">
           <p className="font-headline text-[10px] uppercase tracking-[0.3em] text-white/50 font-black mb-4">
             Retrieval Vector
           </p>

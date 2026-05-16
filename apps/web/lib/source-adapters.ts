@@ -597,13 +597,50 @@ const fetchGenericStories = async (
 };
 
 const fallbackForSource = (source: SourceDefinition): StoryNode[] => {
+  const sourceFallbackContent: Record<string, string[]> = {
+    "yahoo-finance": [
+      "Global markets showed mixed signals today as investors weighed conflicting economic data. Major indices fluctuated amid uncertainty over interest rate policy and geopolitical tensions affecting commodity prices.",
+      "Trading volumes remained elevated as institutional investors repositioned portfolios ahead of key economic releases. Analysts point to diverging signals from employment data and inflation metrics.",
+    ],
+    guardian: [
+      "International developments continue to shape the global landscape as diplomatic efforts intensify across multiple regions. Key stakeholders are working toward consensus on critical policy matters.",
+      "Analysis of recent events suggests shifting dynamics in international relations, with emerging trends pointing to new patterns of cooperation and competition among major powers.",
+    ],
+    "rss-atom": [
+      "Breaking developments in world affairs have captured international attention as multiple events unfold simultaneously. Experts are analyzing the implications for global stability and economic outlook.",
+      "Recent reports indicate significant changes in the international landscape, with analysts tracking multiple developing situations across different regions.",
+    ],
+    "hacker-news": [
+      "The technology community is discussing emerging trends in software development and infrastructure. New approaches to system design are gaining traction among developers and engineers.",
+      "Innovation in the tech sector continues at a rapid pace, with new tools and frameworks being released regularly. The community remains engaged in debates about best practices.",
+    ],
+    default: [
+      "Developing story: Multiple sources are reporting on significant events with potential global implications. Analysts are monitoring the situation closely as more information becomes available.",
+      "Update: New information has emerged regarding ongoing developments. Experts suggest the situation may have broader implications than initially anticipated.",
+    ],
+  };
+
+  const contentPool = sourceFallbackContent[source.id] || sourceFallbackContent.default;
+
+  let fallbackUrl: string | undefined;
+  try {
+    const parsed = new URL(source.endpoint);
+    fallbackUrl = `${parsed.origin}`;
+  } catch {
+    fallbackUrl = undefined;
+  }
+
   return Array.from({ length: 2 }).map((_, idx) => {
+    const content = contentPool[idx % contentPool.length];
+    const title = content.split(".")[0];
     return createStory(
       source.id,
       `fallback-${idx}`,
-      `${source.label} placeholder signal #${idx + 1}`,
+      title,
       new Date(Date.now() - idx * 300000).toISOString(),
       ["rss-atom"],
+      content,
+      fallbackUrl,
     );
   });
 };

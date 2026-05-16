@@ -421,12 +421,16 @@ export function LiveHome({ initialData, onNewsClick }: { initialData: LivePayloa
               {/* ─── Article body ─── */}
               {!isArticleLoading && (
                 <div className="article-body">
-                  {article?.html ? (
+                  {article?.html && article.html.trim().length > 50 ? (
                     <div className="text-[17px] font-body text-[#292524] leading-[1.85] [&_p]:mb-5 [&_h2]:font-headline [&_h2]:text-[24px] [&_h2]:font-black [&_h2]:text-[#1c1917] [&_h2]:mt-10 [&_h2]:mb-4 [&_h3]:font-headline [&_h3]:text-[20px] [&_h3]:font-bold [&_h3]:mt-8 [&_h3]:mb-3 [&_img]:rounded-xl [&_img]:shadow-md [&_img]:my-8 [&_img]:max-w-full [&_blockquote]:border-l-4 [&_blockquote]:border-[#ff3e00] [&_blockquote]:pl-5 [&_blockquote]:my-6 [&_blockquote]:italic [&_blockquote]:text-[#57534e] [&_a]:text-[#ff3e00] [&_a]:underline [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-4 [&_li]:mb-2 [&_figure]:my-8 [&_figcaption]:text-center [&_figcaption]:text-sm [&_figcaption]:text-[#a8a29e] [&_figcaption]:mt-2 [&_video]:rounded-xl [&_video]:my-8 [&_video]:max-w-full" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.html, { USE_PROFILES: { html: true } }) }} />
-                  ) : article?.text ? (
+                  ) : article?.text && article.text.trim().length > 50 ? (
                     <p className="text-[17px] font-body text-[#292524] leading-[1.85] whitespace-pre-wrap">{article.text}</p>
-                  ) : selectedStory.content?.trim() ? (
-                    <p className="text-[17px] font-body text-[#292524] leading-[1.85] mb-8">{selectedStory.content}</p>
+                  ) : selectedStory.content && selectedStory.content.trim().length > 50 ? (
+                    <div className="text-[17px] font-body text-[#292524] leading-[1.85] [&_p]:mb-4">
+                      {selectedStory.content.split('\n').filter(p => p.trim()).map((para, i) => (
+                        <p key={i}>{para}</p>
+                      ))}
+                    </div>
                   ) : article?.description ? (
                     <p className="text-[17px] font-body text-[#57534e] leading-[1.85] mb-8 italic">{article.description}</p>
                   ) : (

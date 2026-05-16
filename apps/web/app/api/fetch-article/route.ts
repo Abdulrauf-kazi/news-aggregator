@@ -107,7 +107,7 @@ export async function GET(request: Request) {
       const $ = cheerio.load(html);
       
       // Remove non-content elements
-      $('script, style, nav, header, footer, iframe, noscript, .ad, .ads, .advertisement, .sidebar, .comments, .related, .newsletter, .subscription').remove();
+      $('script, style, nav, header, footer, iframe, noscript, .ad, .ads, .advertisement, .sidebar, .comments, .related, .newsletter, .subscription, .cookie-banner, .popup, .modal').remove();
       
       // Try to find main content area
       const contentSelectors = [
@@ -127,6 +127,9 @@ export async function GET(request: Request) {
         '.main-content',
         '.content',
         'main',
+        '.post',
+        '.story',
+        '.news-item',
       ];
       
       let $content: cheerio.Cheerio<any> | null = null;
@@ -145,7 +148,7 @@ export async function GET(request: Request) {
       
       // Extract paragraphs with minimum length
       const paragraphs: string[] = [];
-      $content.find('p, div, li, td').each((_, el) => {
+      $content.find('p, div, li, td, h2, h3').each((_, el) => {
         const text = $(el).text().trim();
         if (text.length > 50 && !paragraphs.includes(text)) {
           paragraphs.push(text);
@@ -163,7 +166,7 @@ export async function GET(request: Request) {
     // STRATEGY 3: Extract all meaningful text as last resort
     let fallbackText = '';
     if (!article && !cheerioContent) {
-      const textNodes = doc.querySelectorAll('p, div, span, li, td');
+      const textNodes = doc.querySelectorAll('p, div, span, li, td, h2, h3');
       const textParts: string[] = [];
       for (const node of Array.from(textNodes)) {
         const text = node.textContent?.trim();
@@ -176,21 +179,20 @@ export async function GET(request: Request) {
       fallbackText = unique.map(t => `<p>${t}</p>`).join('\n');
     }
 
+    // STRATEGY 4: If still no content, use description or page title as content
     if (!article && !cheerioContent && !fallbackText) {
-      return NextResponse.json({ 
-        text: description || '', 
-        html: description ? `<p>${description}</p>` : '', 
-        imageUrl,
-        siteName,
-        author,
-        publishedDate,
-        readingTime: 0,
-        finalUrl
-      });
+      if (description) {
+        fallbackText = `<p>${description}</p>`;
+      } else {
+        const pageTitle = doc.title || '';
+        if (pageTitle) {
+          fallbackText = `<p>${pageTitle}</p><p>Content from ${finalUrl}</p>`;
+        }
+      }
     }
 
     const finalHtml = article?.content || cheerioContent || fallbackText;
-    const finalTitle = article?.title || cheerioTitle || '';
+    const finalTitle = article?.title || cheerioTitle || doc.title || '';
     const finalText = article?.textContent || '';
     
     const wordCount = finalText.split(/\s+/).filter(Boolean).length;
