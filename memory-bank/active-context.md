@@ -1,13 +1,14 @@
 # Active Context
 
 ## Current Focus
-- Fixed detailed news rendering, bookmarking, and 'READ ORIGINAL' functionality in the live news dashboard.
+- Fixed the root cause of the empty news modal: URL extraction from story IDs, article fetching, and detail rendering.
 
 ## Recent Changes
-- Modified `live-home.tsx` to fetch the full article details via `/api/fetch-article` for the selected story.
-- Updated the node analysis overlay in `live-home.tsx` to render detailed news content (HTML, text, and images).
-- Implemented functional local state toggle for bookmarking news items.
-- Fixed 'READ ORIGINAL' button behavior to gracefully fallback to Google Search when the direct article `url` is missing from the mocked/graph data.
+- **Root cause identified & fixed**: `getArticleUrl()` checked `story.id.startsWith("http")` but story IDs use format `story:source:https://...`. The URL was never extracted. Now uses regex `/https?:\/\/.+/` to find embedded URLs.
+- **useEffect infinite loop fixed**: Article fetch `useEffect` depended on `selectedStory` (a new object reference on every data refresh). Changed to depend on `selectedGraphNodeId` (a stable string).
+- **Enhanced detail view**: Added article metadata display (author, site name, published date, reading time). Applied rich typography styling to article HTML content.
+- **openOriginal** now uses `article.finalUrl` (the actual resolved URL from the article fetcher) as first priority.
 
 ## Next Steps
-- Continue monitoring user feedback on the node analysis interactions and detailed article rendering.
+- Monitor that article fetching works reliably across all source types (GDELT, RSS, HackerNews, etc.).
+- Consider persisting bookmarks to localStorage or MongoDB.
