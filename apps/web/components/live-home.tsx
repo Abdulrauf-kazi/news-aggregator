@@ -52,6 +52,11 @@ export function LiveHome({ initialData, onNewsClick }: { initialData: LivePayloa
   const [isSidebarVisible, setIsSidebarVisible] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(420);
   const resizingRef = useRef(false);
+
+  const [bookmarkedStories, setBookmarkedStories] = useState<Set<string>>(new Set());
+  const [article, setArticle] = useState<any>(null);
+  const [isArticleLoading, setIsArticleLoading] = useState(false);
+  const [articleError, setArticleError] = useState<string | null>(null);
   
   useEffect(() => {
     const handleToggle = () => setIsSidebarVisible((prev) => !prev);
@@ -80,11 +85,22 @@ export function LiveHome({ initialData, onNewsClick }: { initialData: LivePayloa
     };
   }, []);
 
-  const getArticleUrl = useCallback((story: any) => {
+  const getArticleUrl = useCallback((story: any): string | null => {
     if (!story) return null;
-    let url = story.url || "";
-    if (!url && story.id.startsWith("http")) url = story.id;
-    return url || null;
+    // 1. Direct url field
+    if (story.url && typeof story.url === "string" && story.url.startsWith("http")) {
+      return story.url;
+    }
+    // 2. URL embedded in the story id (e.g. "story:gdelt:https://tass.com/...")
+    if (story.id && typeof story.id === "string") {
+      const httpMatch = story.id.match(/https?:\/\/.+/);
+      if (httpMatch) return httpMatch[0];
+    }
+    // 3. ID itself is a URL
+    if (story.id && typeof story.id === "string" && story.id.startsWith("http")) {
+      return story.id;
+    }
+    return null;
   }, []);
 
   const refresh = useCallback(async (force = false) => {
@@ -132,10 +148,78 @@ export function LiveHome({ initialData, onNewsClick }: { initialData: LivePayloa
     return data.stories.find((s) => s.id === selectedGraphNodeId) || null;
   }, [selectedGraphNodeId, data.stories]);
 
-  const openOriginal = (story: any) => {
+  // Fetch full article when a story is selected.
+  // Depend on selectedGraphNodeId (stable string) NOT selectedStory (new object ref on refresh).
+  useEffect(() => {
+    if (!selectedGraphNodeId) {
+      setArticle(null);
+      setArticleError(null);
+      setIsArticleLoading(false);
+      return;
+    }
+    const story = data.stories.find((s) => s.id === selectedGraphNodeId);
+    if (!story) {
+      setArticle(null);
+      return;
+    }
     const url = getArticleUrl(story);
+    if (!url) {
+      // No URL at all — show what we have, don't fetch
+      setArticle(null);
+      setIsArticleLoading(false);
+      setArticleError(null);
+      return;
+    }
+
+    let isActive = true;
+    setIsArticleLoading(true);
+    setArticleError(null);
+    setArticle(null);
+
+    fetch(`/api/fetch-article?url=${encodeURIComponent(url)}`)
+      .then((res) => res.json())
+      .then((articleData) => {
+        if (!isActive) return;
+        // Check if the response has usable content (html or text)
+        const hasContent = (articleData.html && articleData.html.trim().length > 50) || (articleData.text && articleData.text.trim().length > 50);
+        if (hasContent) {
+          setArticle(articleData);
+          setArticleError(null);
+        } else {
+          // API returned but no parseable content — set article for metadata but show error
+          setArticle(articleData.finalUrl ? articleData : null);
+          setArticleError(articleData.error || null);
+        }
+      })
+      .catch((err) => {
+        if (isActive) {
+          setArticleError(err instanceof Error ? err.message : "Unable to load article");
+          setArticle(null);
+        }
+      })
+      .finally(() => {
+        if (isActive) setIsArticleLoading(false);
+      });
+
+    return () => { isActive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGraphNodeId]);
+
+  const toggleBookmark = useCallback((storyId: string) => {
+    setBookmarkedStories(prev => {
+      const next = new Set(prev);
+      if (next.has(storyId)) next.delete(storyId);
+      else next.add(storyId);
+      return next;
+    });
+  }, []);
+
+  const openOriginal = (story: any) => {
+    const url = article?.finalUrl || getArticleUrl(story);
     if (url) {
       window.open(url, "_blank", "noopener,noreferrer");
+    } else {
+      alert("Original source URL is not available for this story.");
     }
   };
 
@@ -271,74 +355,124 @@ export function LiveHome({ initialData, onNewsClick }: { initialData: LivePayloa
         </AnimatePresence>
       </div>
 
-      {/* NODE ANALYSIS DETAIL VIEW (Matches Screenshot Perfectly) */}
+      {/* ── REDESIGNED NEWS ARTICLE READER ── */}
       {selectedStory && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="node-analysis-overlay">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="node-analysis-overlay">
+          {/* ─── Sticky top bar ─── */}
           <header className="analysis-header flex justify-between items-center">
-             <div className="flex items-center gap-6">
-                <div className="flex items-center gap-3">
-                   <span className="w-2.5 h-2.5 bg-[#ff3e00] rounded-full shadow-[0_0_10px_#ff3e00]"></span>
-                   <span className="text-[11px] font-headline font-black text-[#ff3e00] uppercase tracking-[0.3em]">Node Analysis</span>
-                </div>
-                <span className="tag bg-[#f5f5f4] border-[#d6d3d1] text-[#a8a29e] text-[9px] font-black px-2 py-0.5">AI</span>
-             </div>
-             <div className="flex items-center gap-4">
-                <button className="px-6 py-3 bg-[#ff3e00] text-white font-headline text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-2 shadow-lg">
-                   <span className="text-[14px]">★</span> BOOKMARKED
-                </button>
-                <button onClick={() => openOriginal(selectedStory)} className="px-6 py-3 bg-[#1c1917] text-white font-headline text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-3 hover:bg-[#ff3e00] transition-all">
-                   READ ORIGINAL <span className="material-symbols-outlined text-[14px]">north_east</span>
-                </button>
-                <button onClick={() => setSelectedGraphNodeId(null)} className="w-11 h-11 flex items-center justify-center bg-[#f5f5f4] border border-[#d6d3d1] rounded-xl text-[#57534e] hover:text-[#ff3e00] transition-all">
-                   <span className="material-symbols-outlined">close</span>
-                </button>
-             </div>
+            <div className="flex items-center gap-4">
+              <button onClick={() => setSelectedGraphNodeId(null)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-[#f5f5f4] border border-[#d6d3d1] text-[#57534e] hover:text-[#ff3e00] hover:border-[#ff3e00] transition-all">
+                <span className="material-symbols-outlined text-[20px]">arrow_back</span>
+              </button>
+              <span className="bg-[#fff5f2] text-[#ff3e00] px-3 py-1 rounded-full text-[9px] font-headline font-black uppercase tracking-widest border border-[#ff3e00]/20">{selectedStory.topic}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={() => toggleBookmark(selectedStory.id)} className={`px-5 py-2.5 text-white font-headline text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-2 transition-all ${bookmarkedStories.has(selectedStory.id) ? "bg-[#ff3e00]" : "bg-[#a8a29e] hover:bg-[#ff3e00]"}`}>
+                <span className="material-symbols-outlined text-[16px]">{bookmarkedStories.has(selectedStory.id) ? "bookmark_added" : "bookmark"}</span>
+                {bookmarkedStories.has(selectedStory.id) ? "Saved" : "Save"}
+              </button>
+              <button onClick={() => openOriginal(selectedStory)} className="px-5 py-2.5 bg-[#1c1917] text-white font-headline text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-2 hover:bg-[#ff3e00] transition-all">
+                Original <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+              </button>
+            </div>
           </header>
 
-          <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col py-20">
-             <div className="max-w-[1100px] mx-auto w-full px-12">
-                <h2 className="font-headline text-[48px] font-black text-[#1c1917] leading-[1.1] tracking-tight mb-20">
-                   {selectedStory.title}
-                </h2>
+          {/* ─── Scrollable content ─── */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
+            <article className="max-w-[820px] mx-auto w-full px-6 py-16">
 
-                <div className="bg-white border-l-[6px] border-l-[#ff3e00] border border-[#d6d3d1] rounded-[2rem] p-16 shadow-2xl relative">
-                   <p className="text-[10px] font-headline font-black text-[#a8a29e] uppercase tracking-[0.4em] mb-12">Primary Signal Data</p>
-                   <div className="font-headline text-[22px] font-bold text-[#1c1917] leading-relaxed mb-16">
-                     {getStorySummary(selectedStory)}
-                   </div>
-                   
-                   <div className="pt-10 border-t border-[#f5f5f4] flex justify-between items-center font-headline text-[10px] text-[#a8a29e] uppercase font-bold tracking-widest">
-                      <div>Ingestion Sources: {selectedStory.sourceIds?.join(", ") || "Global Stream"}</div>
-                      <div>Timestamp: {new Date(selectedStory.timestamp).toLocaleString()}</div>
-                   </div>
+              {/* Hero image */}
+              {!isArticleLoading && article?.imageUrl && (
+                <div className="mb-10 -mx-6 rounded-2xl overflow-hidden shadow-lg">
+                  <img src={article.imageUrl} alt="" className="w-full object-cover max-h-[480px]" loading="lazy" />
                 </div>
+              )}
 
-                {/* Intelligent Recommendations */}
-                <div className="mt-20">
-                   <h4 className="font-headline text-[11px] text-[#1c1917] uppercase font-black tracking-[0.3em] mb-10 flex items-center gap-4">
-                      <span className="w-1.5 h-1.5 bg-[#ff3e00] rounded-full"></span>
-                      Intelligent Recommendations
-                   </h4>
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      {recommendedStories.map(s => (
-                        <div key={s.id} onClick={() => setSelectedGraphNodeId(s.id)} className="bg-white border border-[#d6d3d1] p-8 rounded-2xl cursor-pointer hover:border-[#ff3e00] transition-all shadow-sm group">
-                           <div className="flex justify-between items-start mb-4">
-                              <span className="text-[9px] font-headline font-black text-[#ff3e00] uppercase tracking-widest">
-                                 {data.meta.recommendationReasons[s.id] ? "Contextual Match" : "Semantic Match"}
-                              </span>
-                              <span className="text-[9px] font-headline font-black text-[#a8a29e] uppercase tracking-widest">{s.topic}</span>
-                           </div>
-                           <h5 className="font-headline font-bold text-[14px] text-[#1c1917] line-clamp-2 uppercase tracking-tight group-hover:text-[#ff3e00] transition-colors mb-3">{s.title}</h5>
-                           {data.meta.recommendationReasons[s.id] && (
-                             <p className="text-[10px] text-[#57534e] italic border-l-2 border-[#ff3e00] pl-3 py-1 bg-[#fff5f2]">
-                               {data.meta.recommendationReasons[s.id]}
-                             </p>
-                           )}
-                        </div>
-                      ))}
-                   </div>
+              {/* Title */}
+              <h1 className="font-headline text-[36px] md:text-[44px] font-black text-[#1c1917] leading-[1.15] tracking-tight mb-6">
+                {article?.title || selectedStory.title}
+              </h1>
+
+              {/* Meta row */}
+              <div className="flex flex-wrap items-center gap-3 mb-10 pb-8 border-b border-[#e7e5e4]">
+                {article?.siteName && <span className="text-[12px] font-headline font-bold text-[#ff3e00] uppercase tracking-wider">{article.siteName}</span>}
+                {!article?.siteName && <span className="text-[12px] font-headline font-bold text-[#ff3e00] uppercase tracking-wider">{selectedStory.sourceIds?.[0] || "Signal"}</span>}
+                {(article?.byline || article?.author) && <><span className="text-[#d6d3d1]">·</span><span className="text-[12px] font-body text-[#57534e]">{article.byline || article.author}</span></>}
+                <span className="text-[#d6d3d1]">·</span>
+                <span className="text-[12px] font-body text-[#78716c]">{article?.publishedDate ? new Date(article.publishedDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : new Date(selectedStory.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                {article?.readingTime && <><span className="text-[#d6d3d1]">·</span><span className="text-[12px] font-body text-[#78716c]">{article.readingTime} min read</span></>}
+              </div>
+
+              {/* Loading state */}
+              {isArticleLoading && (
+                <div className="py-20 flex flex-col items-center gap-5">
+                  <div className="w-10 h-10 border-[3px] border-[#ff3e00] border-t-transparent rounded-full animate-spin" />
+                  <p className="text-[12px] font-headline font-black text-[#a8a29e] uppercase tracking-[0.3em]">Loading article...</p>
                 </div>
-             </div>
+              )}
+
+              {/* Error banner */}
+              {articleError && !isArticleLoading && (
+                <div className="mb-8 px-5 py-4 bg-[#fef2f2] border border-[#fecaca] rounded-xl text-[13px] text-[#b91c1c] font-medium">
+                  Could not load full article — showing available data.
+                </div>
+              )}
+
+              {/* ─── Article body ─── */}
+              {!isArticleLoading && (
+                <div className="article-body">
+                  {article?.html ? (
+                    <div className="text-[17px] font-body text-[#292524] leading-[1.85] [&_p]:mb-5 [&_h2]:font-headline [&_h2]:text-[24px] [&_h2]:font-black [&_h2]:text-[#1c1917] [&_h2]:mt-10 [&_h2]:mb-4 [&_h3]:font-headline [&_h3]:text-[20px] [&_h3]:font-bold [&_h3]:mt-8 [&_h3]:mb-3 [&_img]:rounded-xl [&_img]:shadow-md [&_img]:my-8 [&_img]:max-w-full [&_blockquote]:border-l-4 [&_blockquote]:border-[#ff3e00] [&_blockquote]:pl-5 [&_blockquote]:my-6 [&_blockquote]:italic [&_blockquote]:text-[#57534e] [&_a]:text-[#ff3e00] [&_a]:underline [&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-4 [&_li]:mb-2 [&_figure]:my-8 [&_figcaption]:text-center [&_figcaption]:text-sm [&_figcaption]:text-[#a8a29e] [&_figcaption]:mt-2 [&_video]:rounded-xl [&_video]:my-8 [&_video]:max-w-full" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.html, { USE_PROFILES: { html: true } }) }} />
+                  ) : article?.text ? (
+                    <p className="text-[17px] font-body text-[#292524] leading-[1.85] whitespace-pre-wrap">{article.text}</p>
+                  ) : selectedStory.content?.trim() ? (
+                    <p className="text-[17px] font-body text-[#292524] leading-[1.85] mb-8">{selectedStory.content}</p>
+                  ) : article?.description ? (
+                    <p className="text-[17px] font-body text-[#57534e] leading-[1.85] mb-8 italic">{article.description}</p>
+                  ) : (
+                    <div>
+                      <p className="text-[17px] font-body text-[#57534e] leading-[1.85] mb-8 italic">Full article content could not be extracted. View the original source for the complete story.</p>
+                      <div className="grid grid-cols-2 gap-5 p-6 bg-[#fafaf9] rounded-2xl border border-[#e7e5e4]">
+                        <div><p className="text-[9px] font-headline font-black text-[#a8a29e] uppercase tracking-[0.25em] mb-1">Topic</p><p className="text-[15px] font-headline font-bold text-[#1c1917]">{selectedStory.topic}</p></div>
+                        <div><p className="text-[9px] font-headline font-black text-[#a8a29e] uppercase tracking-[0.25em] mb-1">Score</p><p className="text-[15px] font-headline font-bold text-[#1c1917]">{selectedStory.score}/100</p></div>
+                        <div><p className="text-[9px] font-headline font-black text-[#a8a29e] uppercase tracking-[0.25em] mb-1">Sources</p><p className="text-[15px] font-headline font-bold text-[#1c1917]">{selectedStory.sourceIds?.join(", ")}</p></div>
+                        <div><p className="text-[9px] font-headline font-black text-[#a8a29e] uppercase tracking-[0.25em] mb-1">Published</p><p className="text-[15px] font-headline font-bold text-[#1c1917]">{new Date(selectedStory.timestamp).toLocaleString()}</p></div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ─── Bottom actions ─── */}
+              <div className="mt-12 pt-8 border-t border-[#e7e5e4] flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <button onClick={() => toggleBookmark(selectedStory.id)} className={`px-4 py-2 rounded-lg border text-[11px] font-headline font-black uppercase tracking-widest transition-all flex items-center gap-2 ${bookmarkedStories.has(selectedStory.id) ? "bg-[#ff3e00] text-white border-[#ff3e00]" : "bg-white text-[#57534e] border-[#d6d3d1] hover:border-[#ff3e00] hover:text-[#ff3e00]"}`}>
+                    <span className="material-symbols-outlined text-[16px]">{bookmarkedStories.has(selectedStory.id) ? "bookmark_added" : "bookmark"}</span>
+                    {bookmarkedStories.has(selectedStory.id) ? "Saved" : "Save"}
+                  </button>
+                </div>
+                <button onClick={() => openOriginal(selectedStory)} className="px-5 py-2.5 bg-[#1c1917] text-white font-headline text-[11px] font-black uppercase tracking-widest rounded-lg flex items-center gap-2 hover:bg-[#ff3e00] transition-all">
+                  Read on original site <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                </button>
+              </div>
+
+              {/* ─── Recommendations ─── */}
+              {recommendedStories.length > 0 && (
+                <div className="mt-16 pt-10 border-t border-[#e7e5e4]">
+                  <h4 className="font-headline text-[11px] text-[#1c1917] uppercase font-black tracking-[0.3em] mb-8 flex items-center gap-3">
+                    <span className="w-1.5 h-1.5 bg-[#ff3e00] rounded-full" />Related Stories
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {recommendedStories.map(s => (
+                      <div key={s.id} onClick={() => setSelectedGraphNodeId(s.id)} className="bg-white border border-[#e7e5e4] p-6 rounded-xl cursor-pointer hover:border-[#ff3e00] transition-all group">
+                        <span className="text-[9px] font-headline font-black text-[#ff3e00] uppercase tracking-widest">{s.topic}</span>
+                        <h5 className="font-headline font-bold text-[14px] text-[#1c1917] line-clamp-2 mt-2 group-hover:text-[#ff3e00] transition-colors">{s.title}</h5>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </article>
           </div>
         </motion.div>
       )}

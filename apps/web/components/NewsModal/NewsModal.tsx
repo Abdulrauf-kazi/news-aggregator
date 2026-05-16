@@ -181,8 +181,11 @@ const NewsModal: React.FC<NewsModalProps> = ({ item, onClose }) => {
             {!isLoading && !sanitizedHtml && article?.text && (
               <p>{article.text}</p>
             )}
-            {!isLoading && !sanitizedHtml && !article?.text && !isLoading && !error && (
-              <p className={styles.noContent}>Full article content is not available for this source. Please use the original link below.</p>
+            {!isLoading && !sanitizedHtml && !article?.text && leadText && (
+              <p className={styles.lead}>{leadText}</p>
+            )}
+            {!isLoading && !sanitizedHtml && !article?.text && !leadText && !error && (
+              <p className={styles.noContent}>Full article content could not be extracted. Please use the original link below.</p>
             )}
           </div>
 

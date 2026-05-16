@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
+import * as cheerio from 'cheerio';
 
 export async function GET(request: Request) {
-  // Dynamic imports prevent Turbopack from resolving jsdom's internal data
-  // files at build time, which would crash the static analysis phase.
   const { JSDOM } = await import('jsdom');
   const { Readability } = await import('@mozilla/readability');
 
@@ -15,9 +14,8 @@ export async function GET(request: Request) {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    // Follow redirects (important for Google News RSS URLs)
     const response = await fetch(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -45,11 +43,9 @@ export async function GET(request: Request) {
     const finalUrl = response.url || targetUrl;
     const html = await response.text();
     
-    // Parse the HTML using JSDOM
     const dom = new JSDOM(html, { url: finalUrl });
     const doc = dom.window.document;
     
-    // Extract metadata before Readability consumes it
     const metaTags = doc.getElementsByTagName('meta');
     let imageUrl = '';
     let siteName = '';
@@ -76,12 +72,11 @@ export async function GET(request: Request) {
       if ((name === 'author' || property === 'article:author') && !author) {
         author = content;
       }
-      if ((property === 'article:published_time' || name === 'publish_date') && !publishedDate) {
+      if ((property === 'article:published_time' || name === 'publish_date' || name === 'date') && !publishedDate) {
         publishedDate = content;
       }
     }
 
-    // Try to extract author from structured data
     if (!author) {
       const ldScripts = doc.querySelectorAll('script[type="application/ld+json"]');
       for (const script of ldScripts) {
@@ -101,11 +96,87 @@ export async function GET(request: Request) {
       }
     }
 
-    // Extract reading time estimate
+    // STRATEGY 1: Mozilla Readability (best for clean article extraction)
     const reader = new Readability(doc);
     const article = reader.parse();
 
+    // STRATEGY 2: Cheerio fallback for structured content extraction
+    let cheerioContent = '';
+    let cheerioTitle = '';
     if (!article) {
+      const $ = cheerio.load(html);
+      
+      // Remove non-content elements
+      $('script, style, nav, header, footer, iframe, noscript, .ad, .ads, .advertisement, .sidebar, .comments, .related, .newsletter, .subscription').remove();
+      
+      // Try to find main content area
+      const contentSelectors = [
+        'article',
+        '[role="main"]',
+        '.article-body',
+        '.article-content',
+        '.post-content',
+        '.entry-content',
+        '.story-body',
+        '.content-body',
+        '.article-text',
+        '.article__body',
+        '.post-body',
+        '.content__body',
+        '#articleBody',
+        '.main-content',
+        '.content',
+        'main',
+      ];
+      
+      let $content: cheerio.Cheerio<any> | null = null;
+      for (const selector of contentSelectors) {
+        const $el = $(selector).first();
+        if ($el.length > 0 && $el.text().trim().length > 200) {
+          $content = $el;
+          break;
+        }
+      }
+      
+      // Fallback: use body if no specific content area found
+      if (!$content) {
+        $content = $('body');
+      }
+      
+      // Extract paragraphs with minimum length
+      const paragraphs: string[] = [];
+      $content.find('p, div, li, td').each((_, el) => {
+        const text = $(el).text().trim();
+        if (text.length > 50 && !paragraphs.includes(text)) {
+          paragraphs.push(text);
+        }
+      });
+      
+      if (paragraphs.length > 0) {
+        cheerioContent = paragraphs.map(p => `<p>${p}</p>`).join('\n');
+      }
+      
+      // Extract title if Readability failed
+      cheerioTitle = $('h1').first().text().trim() || $('title').text().trim();
+    }
+
+    // STRATEGY 3: Extract all meaningful text as last resort
+    let fallbackText = '';
+    if (!article && !cheerioContent) {
+      const textNodes = doc.querySelectorAll('p, div, span, li, td');
+      const textParts: string[] = [];
+      for (const node of Array.from(textNodes)) {
+        const text = node.textContent?.trim();
+        if (text && text.length > 80 && text.length < 2000) {
+          textParts.push(text);
+        }
+      }
+      // Deduplicate and take top chunks
+      const unique = Array.from(new Set(textParts)).slice(0, 20);
+      fallbackText = unique.map(t => `<p>${t}</p>`).join('\n');
+    }
+
+    if (!article && !cheerioContent && !fallbackText) {
       return NextResponse.json({ 
         text: description || '', 
         html: description ? `<p>${description}</p>` : '', 
@@ -117,20 +188,22 @@ export async function GET(request: Request) {
         finalUrl
       });
     }
+
+    const finalHtml = article?.content || cheerioContent || fallbackText;
+    const finalTitle = article?.title || cheerioTitle || '';
+    const finalText = article?.textContent || '';
     
-    // Estimate reading time (avg 238 words per minute)
-    const wordCount = (article.textContent || '').split(/\s+/).filter(Boolean).length;
+    const wordCount = finalText.split(/\s+/).filter(Boolean).length;
     const readingTime = Math.max(1, Math.ceil(wordCount / 238));
     
-    // Clean and enhance the HTML for Medium-style rendering
-    const cleanHtml = enhanceArticleHtml(article.content || '');
+    const cleanHtml = enhanceArticleHtml(finalHtml);
     
     return NextResponse.json({ 
-      text: article.textContent,
+      text: finalText,
       html: cleanHtml,
-      title: article.title,
-      byline: article.byline || author,
-      siteName: article.siteName || siteName,
+      title: finalTitle,
+      byline: article?.byline || author,
+      siteName: article?.siteName || siteName,
       imageUrl,
       author,
       publishedDate,
@@ -139,9 +212,19 @@ export async function GET(request: Request) {
       finalUrl,
       description
     });
-  } catch (error) {
-    console.error('Error fetching article:', error);
-    return NextResponse.json({ error: 'Failed to fetch article' }, { status: 500 });
+  } catch (error: any) {
+    console.error('Error fetching article:', error?.message || error);
+    return NextResponse.json({ 
+      text: '', 
+      html: '', 
+      imageUrl: '',
+      siteName: '',
+      author: '',
+      publishedDate: '',
+      readingTime: 0,
+      finalUrl: targetUrl,
+      error: error?.message || 'Failed to fetch article'
+    });
   }
 }
 
