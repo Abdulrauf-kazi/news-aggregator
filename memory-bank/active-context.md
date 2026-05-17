@@ -1,17 +1,16 @@
 # Active Context
 
 ## Current Focus
-- Fixed article content display by implementing multi-layer fallback system for content extraction and data ingestion.
+- Implemented dynamic article routing so news cards navigate to shareable `/news/[slug]` pages and full article extraction happens on demand.
 
 ## Recent Changes
-- **Multi-strategy article extraction**: fetch-article API uses three strategies: Readability → Cheerio structured extraction → raw DOM text → description/title fallback
-- **Enhanced fallback stories**: Placeholder stories now contain realistic content snippets instead of empty placeholders
-- **Google News RSS fallback**: When primary RSS/API sources fail, system automatically tries Google News RSS search for that source
-- **Frontend fallback chain**: live-home.tsx displays content in priority order: article.html → article.text → story.content → article.description → metadata card
-- **RSS content preservation**: Improved RSS parser to properly extract and store content from feed items
+- **Homepage lightweight previews**: `/` and `/api/live` now sanitize graph stories into preview payloads with title, description, source IDs, timestamp, score, topic, and URL while omitting full `content` and embeddings.
+- **Dynamic news route**: Added `/news` listing alias and `/news/[slug]` article pages with SEO metadata, route-level loading skeleton, client-side full article fetch, error fallback, source metadata, and related news.
+- **Card navigation**: Main feed cards are now `Link` elements with prefetch-on-hover behavior; graph node clicks push to the matching article route.
+- **Removed homepage article fetch path**: The old in-page reader/modal path was removed from `LiveHome`, preventing full article content from loading on the homepage.
+- **Shared routing helpers**: Added slug/path resolution and source URL extraction helpers for consistent article URLs.
 
 ## Next Steps
-- User needs to restart dev server to pick up all changes
-- Monitor extraction success rates across different news sources
-- Consider adding article content caching to Redis
-- Test with various paywalled/anti-bot protected sites
+- Resolve existing TypeScript debt blocking `bun run check-types` (Horizon API null typing, Lottie custom element types, old NewsModal price/volume fields, missing axios, source-adapter strictness).
+- Consider persisting article extraction results in Redis so article pages can avoid refetching frequently viewed source URLs.
+- Test article pages against real source-backed stories with images once live source URLs are available in the feed.
