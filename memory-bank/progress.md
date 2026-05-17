@@ -9,3 +9,5 @@
 - 2026-05-17: Implemented dynamic `/news/[slug]` article pages, changed homepage cards and graph node clicks to navigate to shareable article routes, added article-page loader/error/related-news states, and moved full article fetching out of the homepage.
 - 2026-05-17: Added lightweight preview sanitization for homepage and `/api/live` payloads so full story content and embeddings are omitted from listing data.
 - 2026-05-17: Fixed article-page fallback UX for placeholder stories by replacing the "Original source URL is not available" and "Full article content is unavailable" dead ends with synthesized summary text and a source coverage link derived from source definitions.
+- 2026-05-17: Fixed the article URL resolution path so Google News wrapper URLs can be resolved to real publisher article URLs before article fetch/original-site navigation, and added publisher URL capture during RSS ingestion.
+- 2026-05-17: Reduced stale placeholder dominance by detecting synthetic stories, preventing unrelated fallback-story merges, sanitizing stale DB feed payloads, and extending force-refresh live build time.
