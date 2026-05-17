@@ -8,3 +8,4 @@
 - 2026-05-17: Fixed placeholder stories showing empty content by adding realistic content snippets to fallback generator and implementing Google News RSS as universal fallback when primary sources fail.
 - 2026-05-17: Implemented dynamic `/news/[slug]` article pages, changed homepage cards and graph node clicks to navigate to shareable article routes, added article-page loader/error/related-news states, and moved full article fetching out of the homepage.
 - 2026-05-17: Added lightweight preview sanitization for homepage and `/api/live` payloads so full story content and embeddings are omitted from listing data.
+- 2026-05-17: Fixed article-page fallback UX for placeholder stories by replacing the "Original source URL is not available" and "Full article content is unavailable" dead ends with synthesized summary text and a source coverage link derived from source definitions.
