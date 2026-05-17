@@ -11,3 +11,5 @@
 - 2026-05-17: Fixed article-page fallback UX for placeholder stories by replacing the "Original source URL is not available" and "Full article content is unavailable" dead ends with synthesized summary text and a source coverage link derived from source definitions.
 - 2026-05-17: Fixed the article URL resolution path so Google News wrapper URLs can be resolved to real publisher article URLs before article fetch/original-site navigation, and added publisher URL capture during RSS ingestion.
 - 2026-05-17: Reduced stale placeholder dominance by detecting synthetic stories, preventing unrelated fallback-story merges, sanitizing stale DB feed payloads, and extending force-refresh live build time.
+- 2026-05-17: Added GitHub events API and X (Twitter) trending RSS to `/api/horizon` route. Sidebar now shows tabs for All, Polymarket, HackerNews, Reddit, GitHub, Telegram, and X with live counts and platform-specific icons.
+- 2026-05-17: Fixed horizon route TypeScript errors for null filtering and undefined payload access in GitHub event parsing.
