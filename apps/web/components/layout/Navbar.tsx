@@ -173,6 +173,7 @@ export function Navbar() {
             <div className="hidden lg:flex items-center gap-6 font-headline font-bold text-[11px] uppercase tracking-widest">
               <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/">Home</Link>
               <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/news-graph">Network</Link>
+              <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/insights">Visualize</Link>
               <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/bookmarks">Archive</Link>
             </div>
           </div>
