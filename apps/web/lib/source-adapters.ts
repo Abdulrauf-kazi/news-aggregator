@@ -13,6 +13,7 @@ import {
 } from "./story-db";
 import { addEmbeddingsToStories } from "./embeddings";
 import { SOURCE_DEFINITIONS, TOPICS, type SourceDefinition } from "./sources";
+import { isSyntheticStory } from "./story-quality";
 import { buildStoryRecommendations } from "./vector-store";
 
 const REQUEST_TIMEOUT_MS = 8000;
@@ -144,6 +145,7 @@ const createStory = (
   extraSourceIds: string[] = [],
   content?: string,
   url?: string,
+  publisherUrl?: string,
 ): StoryNode => {
   const normalizedTitle = cleanText(title || `Signal from ${sourceId}`);
   const cleanedContent = content ? cleanText(content) : undefined;
@@ -157,7 +159,29 @@ const createStory = (
     sourceIds: [sourceId, ...extraSourceIds],
     timestamp: timestamp ?? new Date().toISOString(),
     url,
+    publisherUrl,
   };
+};
+
+const GOOGLE_NEWS_LINK_PATTERN = /news\.google\.com\/rss\/articles\//i;
+
+const extractXmlSourceUrls = (xml: string) => {
+  const $ = cheerio.load(xml, { xmlMode: true });
+  return $("item")
+    .toArray()
+    .map((item) => {
+      // Google News RSS puts the real publisher URL in the <source> element's url attribute
+      const sourceUrl = $(item).find("source").attr("url");
+      if (sourceUrl) return sourceUrl;
+      
+      // Also try to extract from the link text if it contains a redirect
+      const linkText = $(item).find("link").text().trim();
+      if (linkText && linkText.startsWith("http") && !linkText.includes("news.google.com")) {
+        return linkText;
+      }
+      
+      return undefined;
+    });
 };
 
 const rssParser = new Parser({
@@ -172,10 +196,13 @@ const fetchRssStories = async (
   try {
     const xml = await requestText(source.endpoint);
     const feed = await rssParser.parseString(xml);
+    const sourceUrls = extractXmlSourceUrls(xml);
     return (feed.items || [])
       .slice(0, STORIES_PER_SOURCE)
       .map((item, idx) => {
-        const url = item.link || item.guid || (item as any).uri;
+        const publisherUrl = sourceUrls[idx];
+        // Use publisherUrl as primary if available, otherwise fall back to item link
+        const url = publisherUrl || item.link || item.guid || (item as any).uri;
         const rawContent = item.contentSnippet || item.content || item.summary || (item as any).description || '';
         const content = cleanText(rawContent);
         const title = cleanText(item.title || "RSS item");
@@ -187,7 +214,8 @@ const fetchRssStories = async (
           item.isoDate || item.pubDate,
           ["rss2json"],
           content && content !== title ? content : undefined,
-          url
+          url,
+          publisherUrl
         );
       });
   } catch (e) {
@@ -203,10 +231,13 @@ const fetchGoogleNewsRssStories = async (
     const googleNewsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(source.label || source.id)}&hl=en-US&gl=US&ceid=US:en`;
     const xml = await requestText(googleNewsUrl);
     const feed = await rssParser.parseString(xml);
+    const sourceUrls = extractXmlSourceUrls(xml);
     return (feed.items || [])
       .slice(0, STORIES_PER_SOURCE)
       .map((item, idx) => {
-        const url = item.link || item.guid || (item as any).uri;
+        const publisherUrl = sourceUrls[idx];
+        // Use publisherUrl as primary if available, otherwise fall back to item link
+        const url = publisherUrl || item.link || item.guid || (item as any).uri;
         const rawContent = item.contentSnippet || item.content || item.summary || (item as any).description || '';
         const content = cleanText(rawContent);
         const title = cleanText(item.title || "Google News item");
@@ -218,7 +249,8 @@ const fetchGoogleNewsRssStories = async (
           item.isoDate || item.pubDate,
           ["google-news", "rss-atom"],
           content && content !== title ? content : undefined,
-          url
+          url,
+          publisherUrl
         );
       });
   } catch (e) {
@@ -243,6 +275,7 @@ const fetchRss2JsonStories = async (
         item.pubDate ? new Date(item.pubDate).toISOString() : undefined,
         ["rss-atom"],
         item.description || item.content,
+        item.link,
         item.link
       ),
     );
@@ -269,6 +302,7 @@ const fetchGdeltStories = async (
         toIsoTimestamp(article.seendate),
         ["rss-atom"],
         undefined,
+        article.url,
         article.url
       ),
     );
@@ -309,6 +343,7 @@ const fetchFinnhubStories = async (
         toIsoTimestamp(item.datetime),
         ["yahoo-finance", "fred"],
         item.summary || item.url,
+        item.url,
         item.url
       ),
     );
@@ -338,6 +373,7 @@ const fetchFredStories = async (
         release.realtime_start,
         ["finnhub", "yahoo-finance"],
         undefined,
+        release.link || `https://fred.stlouisfed.org/release?rid=${release.id}`,
         release.link || `https://fred.stlouisfed.org/release?rid=${release.id}`
       ),
     );
@@ -369,6 +405,7 @@ const fetchEiaStories = async (
         item.period,
         ["fred", "finnhub"],
         undefined,
+        source.endpoint,
         source.endpoint
       ),
     );
@@ -399,6 +436,7 @@ const fetchHackerNewsStories = async (
         item.time ? new Date(item.time * 1000).toISOString() : undefined,
         ["github"],
         undefined,
+        item.url || `https://news.ycombinator.com/item?id=${topIds[idx]}`,
         item.url || `https://news.ycombinator.com/item?id=${topIds[idx]}`
       );
     })
@@ -429,6 +467,7 @@ const fetchGithubStories = async (
         event.created_at,
         idx % 2 === 0 ? ["hacker-news", "c2intelfeeds"] : ["hacker-news"],
         undefined,
+        event.repo?.name ? `https://github.com/${event.repo.name}` : undefined,
         event.repo?.name ? `https://github.com/${event.repo.name}` : undefined
       ),
     );
@@ -452,6 +491,7 @@ const fetchArxivStories = async (
         new Date(match[3] ?? Date.now()).toISOString(),
         ["hacker-news"],
         undefined,
+        url,
         url
       ),
     );
@@ -479,6 +519,7 @@ const fetchCoinGeckoStories = async (
         new Date().toISOString(),
         ["yahoo-finance", "finnhub"],
         undefined,
+        coin.item?.id ? `https://www.coingecko.com/en/coins/${coin.item.id}` : undefined,
         coin.item?.id ? `https://www.coingecko.com/en/coins/${coin.item.id}` : undefined
       ),
     );
@@ -506,6 +547,7 @@ const fetchUsgsStories = async (
           : undefined,
         ["nasa-eonet", "nws"],
         undefined,
+        item.properties?.url,
         item.properties?.url
       ),
     );
@@ -533,6 +575,7 @@ const fetchNasaEonetStories = async (
         event.geometry?.[0]?.date,
         ["usgs", "nws"],
         undefined,
+        event.sources?.[0]?.url,
         event.sources?.[0]?.url
       ),
     );
@@ -560,6 +603,7 @@ const fetchNwsStories = async (
         alert.properties?.effective,
         ["usgs", "nasa-eonet"],
         alert.properties?.description,
+        alert.id,
         alert.id
       ),
     );
@@ -619,6 +663,7 @@ const fetchGenericStories = async (
           toIsoTimestamp(ts as string | number | undefined),
           [],
           (item.content as string) || (item.summary as string) || (item.description as string) || undefined,
+          url as string | undefined,
           url as string | undefined
         );
       });
@@ -764,7 +809,28 @@ const mergeStories = (left: StoryNode, right: StoryNode): StoryNode => {
     timestamp: newestTimestamp,
     embedding: mergeEmbeddings(left.embedding, right.embedding),
     url: left.url || right.url,
+    publisherUrl: left.publisherUrl || right.publisherUrl,
   };
+};
+
+const canMergeStories = (left: StoryNode, right: StoryNode) => {
+  if (left.url && right.url && left.url === right.url) {
+    return true;
+  }
+
+  if (isSyntheticStory(left) || isSyntheticStory(right)) {
+    return left.sourceIds.some((sourceId) => right.sourceIds.includes(sourceId));
+  }
+
+  if (GOOGLE_NEWS_LINK_PATTERN.test(left.url ?? "") || GOOGLE_NEWS_LINK_PATTERN.test(right.url ?? "")) {
+    return (
+      left.publisherUrl !== undefined &&
+      right.publisherUrl !== undefined &&
+      left.publisherUrl === right.publisherUrl
+    );
+  }
+
+  return true;
 };
 
 const canonicalizeStories = (stories: StoryNode[]): StoryNode[] => {
@@ -782,6 +848,9 @@ const canonicalizeStories = (stories: StoryNode[]): StoryNode[] => {
       const candidate = canonical[i] as StoryNode;
       const candidateEmbedding = candidate.embedding;
       if (!candidateEmbedding?.length) {
+        continue;
+      }
+      if (!canMergeStories(candidate, story)) {
         continue;
       }
       const similarity = cosineSimilarity(embedding, candidateEmbedding);

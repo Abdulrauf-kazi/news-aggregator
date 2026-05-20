@@ -1,6 +1,7 @@
 import type { StoryNode } from "./graph";
 import { getJsonArray, storeJsonArray } from "./redis";
 import { getDb } from "./mongodb";
+import { isSyntheticStory } from "./story-quality";
 
 const STORY_DB_KEY = "news:db:stories";
 const SOURCE_METRICS_DB_KEY = "news:db:source-metrics";
@@ -11,7 +12,7 @@ export type SourceIngestionMetric = {
   sourceLabel: string;
   endpoint: string;
   ok: boolean;
-  mode: "live" | "fallback";
+  mode: "live" | "fallback" | "google-news-fallback";
   storyCount: number;
   error?: string;
   lastFetchedAt: string;
@@ -29,7 +30,7 @@ export type IngestionRunReport = {
     sourceId: string;
     sourceLabel: string;
     endpoint: string;
-    mode: "live" | "fallback";
+    mode: "live" | "fallback" | "google-news-fallback";
     fetchedStories: number;
     canonicalStories: number;
     error?: string;
@@ -73,9 +74,13 @@ export async function mergeAndStoreStories(
   maxStories = 800,
 ): Promise<StoryNode[]> {
   const existingStories = await readStoredStories();
+  const hasRealIncomingStory = incomingStories.some((story) => !isSyntheticStory(story));
+  const filteredExistingStories = hasRealIncomingStory
+    ? existingStories.filter((story) => !isSyntheticStory(story))
+    : existingStories;
   const map = new Map<string, StoryNode>();
 
-  for (const story of existingStories) {
+  for (const story of filteredExistingStories) {
     map.set(story.id, story);
   }
   for (const story of incomingStories) {

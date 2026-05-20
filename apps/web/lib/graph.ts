@@ -10,6 +10,7 @@ export type StoryNode = {
   timestamp: string;
   embedding?: number[];
   url?: string;
+  publisherUrl?: string;
 };
 
 export type GraphNode = {

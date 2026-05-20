@@ -36,6 +36,7 @@ export async function recordSessionInteraction(input: {
   topic?: string;
   eventType: SessionEventType;
   dwellMs?: number;
+  userId?: string;
 }) {
   const sessionId = clampSessionId(input.sessionId);
   if (!sessionId || !input.storyId) {
@@ -75,6 +76,21 @@ export async function recordSessionInteraction(input: {
       SESSION_TTL_SECONDS,
     ),
   ]);
+
+  // Bridge to user-level CF: if authenticated, also record in user interactions
+  if (input.userId) {
+    try {
+      const { recordUserStoryInteraction } = await import("./social-db");
+      await recordUserStoryInteraction({
+        userId: input.userId,
+        storyId: input.storyId,
+        weight: delta,
+        topic: input.topic,
+      });
+    } catch {
+      // Non-blocking: CF recording failure shouldn't break session tracking
+    }
+  }
 }
 
 export async function getSessionRecentStories(sessionIdRaw?: string) {

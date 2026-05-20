@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { getGraphSnapshot } from "../../../lib/graph-service";
+import { toPreviewGraph } from "../../../lib/news-preview";
 import { recordSessionInteraction } from "../../../lib/session-personalization";
 
 export const dynamic = "force-dynamic";
@@ -26,15 +28,25 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const forceRefresh = url.searchParams.get("refresh") === "1";
   const sessionId = extractSessionId(request, url) || createSessionId();
+
+  // Extract authenticated user ID for social recommendations
+  let userId: string | undefined;
+  try {
+    const session = await auth();
+    userId = session?.user?.id ?? undefined;
+  } catch {
+    // Auth check is non-blocking — continue without userId
+  }
   
   try {
     const snapshot = await getGraphSnapshot({
       forceRefresh,
       sessionId,
+      userId,
     });
 
     const response = NextResponse.json({
-      ...snapshot,
+      ...toPreviewGraph(snapshot),
       meta: {
         ...snapshot.meta,
         fetchedAt: new Date().toISOString(),
@@ -58,7 +70,7 @@ export async function GET(request: Request) {
       // Try to get cached data
       const snapshot = await getGraphSnapshot({ forceRefresh: false, sessionId });
       return NextResponse.json({
-        ...snapshot,
+        ...toPreviewGraph(snapshot),
         meta: {
           ...snapshot.meta,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -71,7 +83,7 @@ export async function GET(request: Request) {
       const { createStoryGraph } = await import("../../../lib/graph");
       const fallback = createStoryGraph(Date.now());
       return NextResponse.json({
-        ...fallback,
+        ...toPreviewGraph(fallback),
         meta: {
           cached: false,
           storage: "fallback-hard",
@@ -80,6 +92,8 @@ export async function GET(request: Request) {
           sourceMetricsCount: 0,
           recommendations: [],
           recommendationReasons: {},
+          socialRecommendations: [],
+          friendActivity: [],
           retrieval: {
             vectorBackend: "none",
             vectorCount: 0,
@@ -105,6 +119,15 @@ export async function POST(request: Request) {
     );
   }
 
+  // Extract authenticated user ID for CF tracking
+  let userId: string | undefined;
+  try {
+    const session = await auth();
+    userId = session?.user?.id ?? undefined;
+  } catch {
+    // Non-blocking
+  }
+
   const body = (await request.json()) as {
     eventType?: "click" | "dwell";
     storyId?: string;
@@ -125,6 +148,7 @@ export async function POST(request: Request) {
     storyId: body.storyId,
     topic: body.topic,
     dwellMs: body.dwellMs,
+    userId,
   });
 
   return NextResponse.json({ ok: true });

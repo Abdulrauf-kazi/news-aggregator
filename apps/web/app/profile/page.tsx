@@ -31,6 +31,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [socialCounts, setSocialCounts] = useState<{ following: number; followers: number }>({ following: 0, followers: 0 });
 
   const mono = "'IBM Plex Mono', monospace";
 
@@ -42,6 +43,13 @@ export default function ProfilePage() {
 
     if (status === "authenticated") {
       fetchProfile();
+      // Fetch social counts
+      fetch("/api/friends")
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.counts) setSocialCounts(data.counts);
+        })
+        .catch(() => {});
     }
   }, [status, router]);
 
@@ -211,6 +219,25 @@ export default function ProfilePage() {
                 <p style={{ fontFamily: mono, fontSize: 10, color: "#a8a29e", margin: 0 }}>
                   Joined {profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : "N/A"}
                 </p>
+                {/* Social counts */}
+                <div style={{ display: "flex", gap: 16, marginTop: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 800, color: "#1c1917" }}>
+                      {socialCounts.following}
+                    </span>
+                    <span style={{ fontFamily: mono, fontSize: 9, color: "#a8a29e", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                      Following
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ fontFamily: mono, fontSize: 13, fontWeight: 800, color: "#1c1917" }}>
+                      {socialCounts.followers}
+                    </span>
+                    <span style={{ fontFamily: mono, fontSize: 9, color: "#a8a29e", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                      Followers
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 

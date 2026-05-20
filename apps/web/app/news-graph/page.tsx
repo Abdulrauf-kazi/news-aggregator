@@ -22,6 +22,8 @@ export default async function NewsGraphPage() {
             sourceMetricsCount: 0,
             recommendations: [],
             recommendationReasons: {},
+            socialRecommendations: [],
+            friendActivity: [],
             retrieval: {
               vectorBackend: "cosine",
               vectorCount: 0,

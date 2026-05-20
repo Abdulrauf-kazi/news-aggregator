@@ -3,11 +3,18 @@ import { getPlannedS3Target } from "./s3";
 import { buildLiveGraph } from "./source-adapters";
 import { cacheJson, getCachedJson } from "./redis";
 import { readSourceMetrics, readStoredStories } from "./story-db";
+import { isSyntheticStory } from "./story-quality";
 import { ensureVectorStore, queryTopKSimilarStories } from "./vector-store";
 import {
   getSessionRecentStories,
   getSessionRelevanceByStory,
 } from "./session-personalization";
+import {
+  buildFriendRecommendations,
+  getSocialRelevanceScores,
+  type SocialRecommendation,
+  type FriendActivity,
+} from "./collaborative-filtering";
 
 const GRAPH_CACHE_KEY = "news:graph:live";
 const GRAPH_LOCK_KEY = "news:graph:ingestion-lock";
@@ -21,6 +28,9 @@ const EXPLORATION_INJECTION_RATE = Number(
 const LIVE_GRAPH_TIMEOUT_MS = Number(
   process.env.LIVE_GRAPH_TIMEOUT_MS ?? 15000,
 );
+const FORCE_REFRESH_TIMEOUT_MS = Number(
+  process.env.FORCE_REFRESH_TIMEOUT_MS ?? 60000,
+);
 
 export type GraphSnapshot = StoryGraph & {
   meta: {
@@ -31,11 +41,13 @@ export type GraphSnapshot = StoryGraph & {
     sourceMetricsCount: number;
     recommendations: string[];
     recommendationReasons: Record<string, string>;
+    socialRecommendations: SocialRecommendation[];
+    friendActivity: FriendActivity[];
     retrieval: {
       vectorBackend: string;
       vectorCount: number;
       graphSeedCount: number;
-      mode: "vector+graph" | "graph";
+      mode: "vector+graph" | "graph" | "vector+graph+social";
     };
   };
 };
@@ -62,6 +74,22 @@ const calculateAgeHours = (timestamp: string) => {
   const ageMs = Math.max(0, Date.now() - publishedMs);
   return ageMs / (1000 * 60 * 60);
 };
+
+const shouldBypassStoredStories = (stories: StoryGraph["stories"]) => {
+  if (stories.length === 0) {
+    return true;
+  }
+
+  const newestStory = stories[0]!;
+  const newestAgeHours = calculateAgeHours(newestStory.timestamp);
+  const syntheticCount = stories.filter((story) => isSyntheticStory(story)).length;
+  const syntheticRatio = syntheticCount / stories.length;
+
+  return newestAgeHours > 12 || syntheticRatio > 0.2;
+};
+
+const filterSyntheticStories = (stories: StoryGraph["stories"]) =>
+  stories.filter((story) => !isSyntheticStory(story));
 
 const calculateDecayedTrendScore = (input: {
   score: number;
@@ -272,6 +300,7 @@ const buildRetrievalRecommendations = async (input: {
   graph: StoryGraph;
   startStoryIds: string[];
   topK: number;
+  userId?: string;
 }) => {
   const vectorStoreStats = await ensureVectorStore(input.graph.stories);
 
@@ -295,11 +324,30 @@ const buildRetrievalRecommendations = async (input: {
     topK: input.topK,
   });
 
+  // Social CF recommendations (only for authenticated users)
+  let socialResult: {
+    recommendations: SocialRecommendation[];
+    friendActivity: FriendActivity[];
+  } = { recommendations: [], friendActivity: [] };
+
+  if (input.userId) {
+    try {
+      socialResult = await buildFriendRecommendations({
+        userId: input.userId,
+        stories: input.graph.stories,
+        topK: input.topK,
+      });
+    } catch (err) {
+      console.error("Social CF failed (non-blocking):", err);
+    }
+  }
+
   const mergedIds = [
     ...Array.from(vectorCandidates.entries())
       .sort((a, b) => b[1] - a[1])
       .map(([storyId]) => storyId),
     ...graphRecommendations.recommendations,
+    ...socialResult.recommendations.map((r) => r.storyId),
   ];
 
   const uniqueIds = Array.from(new Set(mergedIds))
@@ -308,22 +356,36 @@ const buildRetrievalRecommendations = async (input: {
 
   const reasons = { ...graphRecommendations.reasons };
   for (const storyId of uniqueIds) {
-    if (!reasons[storyId] && vectorCandidates.has(storyId)) {
+    // Social reasons take priority over vector reasons
+    const socialRec = socialResult.recommendations.find(
+      (r) => r.storyId === storyId,
+    );
+    if (socialRec && !reasons[storyId]) {
+      reasons[storyId] = socialRec.reason;
+    } else if (!reasons[storyId] && vectorCandidates.has(storyId)) {
       reasons[storyId] = "Semantic match from vector search";
     }
   }
 
+  const hasSocial = socialResult.recommendations.length > 0;
+  const hasVector =
+    input.startStoryIds.length > 0 && vectorStoreStats.vectorCount > 0;
+
   return {
     recommendations: uniqueIds,
     reasons,
+    socialRecommendations: socialResult.recommendations,
+    friendActivity: socialResult.friendActivity,
     retrieval: {
       vectorBackend: vectorStoreStats.backend,
       vectorCount: vectorStoreStats.vectorCount,
       graphSeedCount: input.startStoryIds.length,
       mode:
-        input.startStoryIds.length > 0 && vectorStoreStats.vectorCount > 0
-          ? ("vector+graph" as const)
-          : ("graph" as const),
+        hasSocial && hasVector
+          ? ("vector+graph+social" as const)
+          : hasVector
+            ? ("vector+graph" as const)
+            : ("graph" as const),
     },
   };
 };
@@ -331,11 +393,20 @@ const buildRetrievalRecommendations = async (input: {
 const rankGraphByScores = async (input: {
   graph: StoryGraph;
   sessionId?: string;
+  userId?: string;
 }): Promise<StoryGraph> => {
-  const sessionRelevance = await getSessionRelevanceByStory({
-    sessionId: input.sessionId,
-    stories: input.graph.stories,
-  });
+  const [sessionRelevance, socialRelevance] = await Promise.all([
+    getSessionRelevanceByStory({
+      sessionId: input.sessionId,
+      stories: input.graph.stories,
+    }),
+    getSocialRelevanceScores({
+      userId: input.userId,
+      stories: input.graph.stories,
+    }),
+  ]);
+
+  const hasSocialSignal = Object.keys(socialRelevance).length > 0;
 
   const rankedStories = input.graph.stories.slice().sort((a, b) => {
     const trendA = calculateDecayedTrendScore({
@@ -350,9 +421,17 @@ const rankGraphByScores = async (input: {
     const recencyB = calculateRecencyScore(b.timestamp);
     const sessionA = sessionRelevance[a.id] ?? 0;
     const sessionB = sessionRelevance[b.id] ?? 0;
+    const socialA = socialRelevance[a.id] ?? 0;
+    const socialB = socialRelevance[b.id] ?? 0;
 
-    const totalA = 0.5 * trendA + 0.3 * recencyA + 0.2 * sessionA;
-    const totalB = 0.5 * trendB + 0.3 * recencyB + 0.2 * sessionB;
+    // 4-factor weighted ranking when social signal is available
+    // Otherwise fall back to 3-factor ranking
+    const totalA = hasSocialSignal
+      ? 0.40 * trendA + 0.25 * recencyA + 0.15 * sessionA + 0.20 * socialA
+      : 0.50 * trendA + 0.30 * recencyA + 0.20 * sessionA;
+    const totalB = hasSocialSignal
+      ? 0.40 * trendB + 0.25 * recencyB + 0.15 * sessionB + 0.20 * socialB
+      : 0.50 * trendB + 0.30 * recencyB + 0.20 * sessionB;
 
     if (totalA !== totalB) {
       return totalB - totalA;
@@ -448,6 +527,7 @@ async function triggerBackgroundIngestion() {
 export async function getGraphSnapshot(options?: {
   forceRefresh?: boolean;
   sessionId?: string;
+  userId?: string;
 }): Promise<GraphSnapshot> {
   const recentSessionStories = await getSessionRecentStories(
     options?.sessionId,
@@ -457,7 +537,7 @@ export async function getGraphSnapshot(options?: {
     ? null
     : await getCachedJson<StoryGraph>(GRAPH_CACHE_KEY);
 
-  if (cached && cached.stories.length > 0) {
+  if (cached && cached.stories.length > 0 && !shouldBypassStoredStories(cached.stories)) {
     const [stories, metrics] = await Promise.all([
       readStoredStories(),
       readSourceMetrics(),
@@ -466,11 +546,13 @@ export async function getGraphSnapshot(options?: {
     const rankedGraph = await rankGraphByScores({
       graph: cached,
       sessionId: options?.sessionId,
+      userId: options?.userId,
     });
     const recommendationResult = await buildRetrievalRecommendations({
       graph: rankedGraph,
       startStoryIds: recentSessionStories,
       topK: 15,
+      userId: options?.userId,
     });
 
     return {
@@ -483,6 +565,8 @@ export async function getGraphSnapshot(options?: {
         sourceMetricsCount: metrics.length,
         recommendations: recommendationResult.recommendations,
         recommendationReasons: recommendationResult.reasons,
+        socialRecommendations: recommendationResult.socialRecommendations,
+        friendActivity: recommendationResult.friendActivity,
         retrieval: recommendationResult.retrieval,
       },
     };
@@ -495,35 +579,45 @@ export async function getGraphSnapshot(options?: {
   ]);
 
   if (dbStories.length > 0) {
-    // Return DB stories immediately
-    void triggerBackgroundIngestion();
+    const bypassStoredStories = shouldBypassStoredStories(dbStories);
+    const preferredDbStories = bypassStoredStories
+      ? filterSyntheticStories(dbStories)
+      : dbStories;
 
-    const { createStoryGraphFromStories } = await import("./graph");
-    const baseGraph = createStoryGraphFromStories(dbStories.slice(0, 200));
-    
-    const rankedGraph = await rankGraphByScores({
-      graph: baseGraph,
-      sessionId: options?.sessionId,
-    });
-    const recommendationResult = await buildRetrievalRecommendations({
-      graph: rankedGraph,
-      startStoryIds: recentSessionStories,
-      topK: 15,
-    });
+    if (preferredDbStories.length > 0 && !options?.forceRefresh) {
+      void triggerBackgroundIngestion();
 
-    return {
-      ...rankedGraph,
-      meta: {
-        cached: false,
-        storage: "mongodb-fallback",
-        plannedArchive: getPlannedS3Target(),
-        totalStoriesInDb: dbStories.length,
-        sourceMetricsCount: dbMetrics.length,
-        recommendations: recommendationResult.recommendations,
-        recommendationReasons: recommendationResult.reasons,
-        retrieval: recommendationResult.retrieval,
-      },
-    };
+      const { createStoryGraphFromStories } = await import("./graph");
+      const baseGraph = createStoryGraphFromStories(preferredDbStories.slice(0, 200));
+      
+      const rankedGraph = await rankGraphByScores({
+        graph: baseGraph,
+        sessionId: options?.sessionId,
+        userId: options?.userId,
+      });
+      const recommendationResult = await buildRetrievalRecommendations({
+        graph: rankedGraph,
+        startStoryIds: recentSessionStories,
+        topK: 15,
+        userId: options?.userId,
+      });
+
+      return {
+        ...rankedGraph,
+        meta: {
+          cached: false,
+          storage: bypassStoredStories ? "mongodb-sanitized" : "mongodb-fallback",
+          plannedArchive: getPlannedS3Target(),
+          totalStoriesInDb: dbStories.length,
+          sourceMetricsCount: dbMetrics.length,
+          recommendations: recommendationResult.recommendations,
+          recommendationReasons: recommendationResult.reasons,
+          socialRecommendations: recommendationResult.socialRecommendations,
+          friendActivity: recommendationResult.friendActivity,
+          retrieval: recommendationResult.retrieval,
+        },
+      };
+    }
   }
 
   // Only block if we have absolutely nothing
@@ -531,7 +625,9 @@ export async function getGraphSnapshot(options?: {
   try {
     graph = await withTimeout(
       buildLiveGraph(),
-      LIVE_GRAPH_TIMEOUT_MS,
+      options?.forceRefresh
+        ? Math.max(LIVE_GRAPH_TIMEOUT_MS, FORCE_REFRESH_TIMEOUT_MS)
+        : LIVE_GRAPH_TIMEOUT_MS,
       "buildLiveGraph",
     );
     await cacheJson(GRAPH_CACHE_KEY, graph, GRAPH_CACHE_TTL_SECONDS);
@@ -549,6 +645,8 @@ export async function getGraphSnapshot(options?: {
         sourceMetricsCount: 0,
         recommendations: [],
         recommendationReasons: {},
+        socialRecommendations: [],
+        friendActivity: [],
         retrieval: {
           vectorBackend: "cosine",
           vectorCount: 0,
@@ -561,11 +659,13 @@ export async function getGraphSnapshot(options?: {
   const rankedGraph = await rankGraphByScores({
     graph,
     sessionId: options?.sessionId,
+    userId: options?.userId,
   });
   const recommendationResult = await buildRetrievalRecommendations({
     graph: rankedGraph,
     startStoryIds: recentSessionStories,
     topK: 15,
+    userId: options?.userId,
   });
 
   return {
@@ -578,6 +678,8 @@ export async function getGraphSnapshot(options?: {
       sourceMetricsCount: dbMetrics.length,
       recommendations: recommendationResult.recommendations,
       recommendationReasons: recommendationResult.reasons,
+      socialRecommendations: recommendationResult.socialRecommendations,
+      friendActivity: recommendationResult.friendActivity,
       retrieval: recommendationResult.retrieval,
     },
   };

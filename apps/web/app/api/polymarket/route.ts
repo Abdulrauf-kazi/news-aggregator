@@ -5,11 +5,12 @@ type PolymarketMarket = {
   question: string;
   slug?: string;
   image?: string;
-  outcomePrices?: string[];
-  outcomes?: string[];
+  outcomePrices?: string;
+  outcomes?: string[] | string;
   volume?: string | number;
   endDate?: string;
   category?: string;
+  tags?: Array<{ id: number; slug: string; label: string }>;
 };
 
 type Outcome = {
@@ -30,9 +31,19 @@ type HorizonItem = {
   volume?: string;
 };
 
-// Fetching from a few different tags to ensure diversity
-const TAGS = [1, 12, 1006, 1007]; // Crypto, Politics, Business, etc.
-const GAMMA_URL = (tagId: number) => `https://gamma-api.polymarket.com/markets?closed=false&limit=10&active=true&tag_id=${tagId}`;
+const CATEGORIES = [
+  { tagId: 1, label: "crypto" },
+  { tagId: 12, label: "politics" },
+  { tagId: 1006, label: "business" },
+  { tagId: 1007, label: "sports" },
+  { tagId: 1008, label: "entertainment" },
+  { tagId: 1009, label: "science" },
+  { tagId: 1010, label: "world" },
+  { tagId: 1011, label: "geopolitics" },
+];
+
+const GAMMA_URL = (tagId: number) =>
+  `https://gamma-api.polymarket.com/markets?closed=false&limit=8&active=true&order_by=volume&tag_id=${tagId}`;
 
 const clampScore = (value: number) => Math.max(5, Math.min(500, value));
 
@@ -51,40 +62,71 @@ const formatVolume = (vol?: string | number) => {
   return `$${v.toFixed(0)}`;
 };
 
+const parseOutcomes = (market: PolymarketMarket): Outcome[] => {
+  const outcomes: Outcome[] = [];
+
+  let outcomeNames: string[] = [];
+  let outcomePrices: number[] = [];
+
+  if (market.outcomes) {
+    if (Array.isArray(market.outcomes)) {
+      outcomeNames = market.outcomes;
+    } else {
+      try {
+        const parsed = JSON.parse(market.outcomes);
+        outcomeNames = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        outcomeNames = [market.outcomes];
+      }
+    }
+  }
+
+  if (market.outcomePrices) {
+    try {
+      const parsed = JSON.parse(market.outcomePrices);
+      outcomePrices = Array.isArray(parsed) ? parsed.map((p: string | number) => parseFloat(String(p))) : [];
+    } catch {
+      const single = parseFloat(market.outcomePrices);
+      if (!Number.isNaN(single)) outcomePrices = [single];
+    }
+  }
+
+  for (let i = 0; i < Math.min(2, outcomeNames.length); i++) {
+    outcomes.push({
+      name: outcomeNames[i] ?? `Outcome ${i + 1}`,
+      price: outcomePrices[i] ?? 0,
+    });
+  }
+
+  return outcomes;
+};
+
 export async function GET() {
   try {
-    // Fetch from multiple tags in parallel for diversity
     const responses = await Promise.all(
-      TAGS.map(tagId => fetch(GAMMA_URL(tagId), { 
-        next: { revalidate: 300 },
-        headers: { "Accept": "application/json" }
-      }).then(r => r.ok ? r.json() as Promise<PolymarketMarket[]> : []))
+      CATEGORIES.map((cat) =>
+        fetch(GAMMA_URL(cat.tagId), {
+          next: { revalidate: 300 },
+          headers: { Accept: "application/json" },
+        }).then((r) => (r.ok ? r.json() as Promise<PolymarketMarket[]> : []))
+      )
     );
-    
-    const rawData = responses.flat();
-    
-    // Deduplicate by question to avoid repeats
+
     const seen = new Set<string>();
-    const uniqueMarkets = rawData.filter(m => {
-      if (seen.has(m.question)) return false;
-      seen.add(m.question);
-      return true;
-    });
+    const uniqueMarkets: PolymarketMarket[] = [];
+
+    for (const markets of responses) {
+      for (const market of markets) {
+        if (!seen.has(market.id)) {
+          seen.add(market.id);
+          uniqueMarkets.push(market);
+        }
+      }
+    }
 
     const items: HorizonItem[] = uniqueMarkets.slice(0, 30).map((market) => {
       const volNum = typeof market.volume === "string" ? parseFloat(market.volume) : (market.volume || 0);
       const volumeScore = Math.round(volNum / 5000);
-      
-      const outcomes: Outcome[] = [];
-      if (market.outcomes && market.outcomePrices) {
-        // Get up to 2 outcomes
-        for (let i = 0; i < Math.min(2, market.outcomes.length); i++) {
-          outcomes.push({
-            name: market.outcomes[i]!,
-            price: parseFloat(market.outcomePrices[i] || "0")
-          });
-        }
-      }
 
       return {
         id: `poly-${market.id}`,
@@ -95,12 +137,11 @@ export async function GET() {
         origin: "POLYMARKET",
         url: market.slug ? `https://polymarket.com/market/${market.slug}` : `https://polymarket.com/`,
         image: market.image,
-        outcomes,
+        outcomes: parseOutcomes(market),
         volume: formatVolume(market.volume),
       };
     });
 
-    // Sort by volume/score
     items.sort((a, b) => b.score - a.score);
 
     return NextResponse.json({ items, total: items.length });

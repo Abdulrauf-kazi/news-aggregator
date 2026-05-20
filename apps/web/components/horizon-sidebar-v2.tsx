@@ -23,7 +23,7 @@ type HorizonItem = {
 
 type HorizonSidebarProps = {
   polymarketItems?: HorizonItem[];
-  onNewsClick: (item: HorizonItem) => void;
+  onNewsClick?: (item: HorizonItem) => void;
 };
 
 type ImpactTone = {
@@ -93,6 +93,12 @@ const originMeta = (origin: string): OriginMeta => {
   if (normalized.includes("POLYMARKET")) {
     return { icon: "show_chart", bg: "bg-[#f0fdf4]", text: "text-[#22c55e]" };
   }
+  if (normalized.includes("GITHUB")) {
+    return { icon: "code", bg: "bg-[#f5f3ff]", text: "text-[#7c3aed]" };
+  }
+  if (normalized === "X") {
+    return { icon: "tag", bg: "bg-[#f8fafc]", text: "text-[#0f172a]" };
+  }
   return { icon: "rss_feed", bg: "bg-[#f5f5f4]", text: "text-[#57534e]" };
 };
 
@@ -106,7 +112,7 @@ const getHost = (url?: string) => {
   }
 };
 
-const FeedCard = ({ item, onClick }: { item: HorizonItem, onClick: (item: HorizonItem) => void }) => {
+const FeedCard = ({ item, onClick }: { item: HorizonItem, onClick?: (item: HorizonItem) => void }) => {
   const handle = item.source.startsWith("@") ? item.source : `@${item.source.replace(/^u\//, "")}`;
   const tone = impactTone(item.score);
   const origin = originMeta(item.origin);
@@ -115,7 +121,7 @@ const FeedCard = ({ item, onClick }: { item: HorizonItem, onClick: (item: Horizo
   return (
     <div
       className={`bg-white rounded-lg shadow-sm border p-3 mb-3 transition-all duration-200 hover:shadow-md hover:border-gray-300 cursor-pointer ${tone.border}`}
-      onClick={() => onClick(item)}
+      onClick={() => onClick?.(item)}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2 min-w-0">
@@ -130,12 +136,13 @@ const FeedCard = ({ item, onClick }: { item: HorizonItem, onClick: (item: Horizo
               <span>{handle}</span>
               <span>·</span>
               <span className="font-mono">{timeAgo(item.timestamp)}</span>
+              <span>·</span>
+              <span className={`font-bold uppercase tracking-wider ${origin.text}`}>{item.origin}</span>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[9px] font-bold uppercase tracking-[0.3em] text-[#ff3e00]">LIVE</span>
-          <span className="text-[9px] uppercase tracking-[0.25em] text-[#57534e]">Horizon</span>
         </div>
       </div>
       <p className="mt-2 text-[11px] leading-relaxed text-[#57534e] line-clamp-2">
@@ -230,7 +237,7 @@ function SkeletonCard() {
 }
 
 export default function HorizonSidebar({ polymarketItems = [], onNewsClick }: HorizonSidebarProps) {
-  const [activeTab, setActiveTab] = useState<"polymarket" | "feed">("feed");
+  const [activeTab, setActiveTab] = useState<"all" | "polymarket" | "hackernews" | "reddit" | "github" | "telegram" | "x">("all");
   const [feedItems, setFeedItems] = useState<HorizonItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -241,7 +248,7 @@ export default function HorizonSidebar({ polymarketItems = [], onNewsClick }: Ho
   const [isPolyLoading, setIsPolyLoading] = useState(false);
   const [polyError, setPolyError] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const pageSize = 12;
+  const pageSize = 35;
 
   const fetchFeed = async (nextOffset = 0, append = false) => {
     if (append) {
@@ -256,7 +263,6 @@ export default function HorizonSidebar({ polymarketItems = [], onNewsClick }: Ho
       const data = await res.json();
       setFeedItems((prev) => {
         const merged = append ? [...prev, ...(data.items ?? [])] : (data.items ?? []);
-        // Strict deduplication by ID and title
         const seenIds = new Set<string>();
         const seenTitles = new Set<string>();
         return merged.filter((item: HorizonItem) => {
@@ -311,9 +317,93 @@ export default function HorizonSidebar({ polymarketItems = [], onNewsClick }: Ho
 
   const sortedPolymarket = useMemo(() => {
     if (!effectivePolymarket) return [];
-    // Shuffle slightly for diversity within the view if they have same score
     return [...effectivePolymarket].sort((a, b) => b.score - a.score);
   }, [effectivePolymarket]);
+
+  const filteredByOrigin = useMemo(() => {
+    if (activeTab === "all") return sortedFeed;
+    const originMap: Record<string, string> = {
+      hackernews: "HACKER NEWS",
+      reddit: "REDDIT",
+      github: "GITHUB",
+      telegram: "TELEGRAM",
+      x: "X",
+    };
+    const targetOrigin = originMap[activeTab];
+    if (!targetOrigin) return sortedFeed;
+    return sortedFeed.filter((item) => item.origin === targetOrigin);
+  }, [sortedFeed, activeTab]);
+
+  const tabCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: sortedFeed.length };
+    sortedFeed.forEach((item) => {
+      const key = item.origin.toLowerCase().replace(/\s+/g, "");
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }, [sortedFeed]);
+
+  const tabs = [
+    { id: "all" as const, label: "All", count: tabCounts.all || 0 },
+    { id: "polymarket" as const, label: "Polymarket", count: sortedPolymarket.length },
+    { id: "hackernews" as const, label: "HackerNews", count: tabCounts.hackernews || 0 },
+    { id: "reddit" as const, label: "Reddit", count: tabCounts.reddit || 0 },
+    { id: "github" as const, label: "GitHub", count: tabCounts.github || 0 },
+    { id: "telegram" as const, label: "Telegram", count: tabCounts.telegram || 0 },
+    { id: "x" as const, label: "X", count: tabCounts.x || 0 },
+  ];
+
+  const renderFeedContent = () => {
+    if (isLoading) {
+      return (
+        <div className="space-y-4">
+          {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
+        </div>
+      );
+    }
+    if (error) {
+      return (
+        <div className="p-8 text-center bg-red-50 rounded-xl border border-red-100">
+          <p className="text-red-500 text-xs font-bold uppercase tracking-wider">{error}</p>
+        </div>
+      );
+    }
+    if (filteredByOrigin.length === 0) {
+      return (
+        <div className="p-8 text-center text-gray-400 text-xs uppercase font-bold tracking-widest">
+          No signals detected
+        </div>
+      );
+    }
+    return filteredByOrigin.map((item) => <FeedCard key={item.id} item={item} onClick={onNewsClick} />);
+  };
+
+  const renderPolymarketContent = () => {
+    if (isPolyLoading) {
+      return (
+        <div className="space-y-4">
+          {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
+        </div>
+      );
+    }
+    if (polyError) {
+      return (
+        <div className="p-8 text-center bg-red-50 rounded-xl border border-red-100">
+          <p className="text-red-500 text-xs font-bold uppercase tracking-wider">{polyError}</p>
+        </div>
+      );
+    }
+    if (sortedPolymarket.length === 0) {
+      return (
+        <div className="p-8 text-center text-gray-400 text-xs uppercase font-bold tracking-widest">
+          No prediction markets active
+        </div>
+      );
+    }
+    return sortedPolymarket.map((item) => <PolymarketCard key={item.id} item={item} />);
+  };
+
+  const isPolymarketTab = activeTab === "polymarket";
 
   return (
     <div className="h-full w-full bg-[#fcfcfc] flex flex-col font-sans">
@@ -322,53 +412,37 @@ export default function HorizonSidebar({ polymarketItems = [], onNewsClick }: Ho
         <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.2em] mt-1">Real-time event detection matrix</p>
       </div>
 
-      <div className="flex-shrink-0 px-6 bg-white border-b border-gray-100">
-        <div className="flex gap-8">
-          <button
-            onClick={() => setActiveTab("feed")}
-            className={`py-4 text-[11px] font-black uppercase tracking-widest transition-all relative ${
-              activeTab === "feed"
-                ? "text-blue-600"
-                : "text-gray-400 hover:text-gray-600"
-            }`}
-          >
-            Feed
-            {activeTab === "feed" && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />}
-          </button>
-          <button
-            onClick={() => setActiveTab("polymarket")}
-            className={`py-4 text-[11px] font-black uppercase tracking-widest transition-all relative ${
-              activeTab === "polymarket"
-                ? "text-blue-600"
-                : "text-gray-400 hover:text-gray-600"
-            }`}
-          >
-            Polymarket
-            {activeTab === "polymarket" && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />}
-          </button>
+      <div className="flex-shrink-0 px-4 bg-white border-b border-gray-100">
+        <div className="flex gap-1 overflow-x-auto custom-scrollbar py-2">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap rounded-lg ${
+                activeTab === tab.id
+                  ? "bg-[#ff3e00] text-white shadow-sm"
+                  : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              {tab.label}
+              {tab.count > 0 && (
+                <span className={`ml-1 px-1.5 py-0.5 rounded text-[9px] ${
+                  activeTab === tab.id ? "bg-white/20" : "bg-gray-100"
+                }`}>
+                  {tab.count}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
       </div>
 
       <div className="flex-grow overflow-y-auto p-4 custom-scrollbar" ref={scrollContainerRef}>
-        {activeTab === "feed" && (
+        {isPolymarketTab ? renderPolymarketContent() : (
           <>
-            {isLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
-              </div>
-            ) : error ? (
-              <div className="p-8 text-center bg-red-50 rounded-xl border border-red-100">
-                <p className="text-red-500 text-xs font-bold uppercase tracking-wider">{error}</p>
-              </div>
-            ) : sortedFeed.length === 0 ? (
-              <div className="p-8 text-center text-gray-400 text-xs uppercase font-bold tracking-widest">
-                No signals detected
-              </div>
-            ) : (
-              sortedFeed.map((item) => <FeedCard key={item.id} item={item} onClick={onNewsClick} />)
-            )}
+            {renderFeedContent()}
             
-            {hasMore && !isLoading && (
+            {hasMore && !isLoading && activeTab === "all" && (
               <button
                 className="w-full mt-4 py-3 rounded-xl border border-gray-200 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-all bg-white shadow-sm"
                 onClick={() => fetchFeed(offset, true)}
@@ -376,26 +450,6 @@ export default function HorizonSidebar({ polymarketItems = [], onNewsClick }: Ho
               >
                 {isLoadingMore ? "Synchronizing..." : "Load More Signals"}
               </button>
-            )}
-          </>
-        )}
-
-        {activeTab === "polymarket" && (
-          <>
-            {isPolyLoading ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
-              </div>
-            ) : polyError ? (
-              <div className="p-8 text-center bg-red-50 rounded-xl border border-red-100">
-                <p className="text-red-500 text-xs font-bold uppercase tracking-wider">{polyError}</p>
-              </div>
-            ) : sortedPolymarket.length === 0 ? (
-              <div className="p-8 text-center text-gray-400 text-xs uppercase font-bold tracking-widest">
-                No prediction markets active
-              </div>
-            ) : (
-              sortedPolymarket.map((item) => <PolymarketCard key={item.id} item={item} />)
             )}
           </>
         )}

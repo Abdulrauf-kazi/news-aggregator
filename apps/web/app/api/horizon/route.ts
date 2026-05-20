@@ -7,7 +7,7 @@ type HorizonItem = {
   source: string;
   score: number;
   timestamp: string;
-  origin: "HACKER NEWS" | "REDDIT" | "TELEGRAM";
+  origin: "HACKER NEWS" | "REDDIT" | "TELEGRAM" | "GITHUB" | "X";
   url?: string;
 };
 
@@ -17,6 +17,9 @@ const REDDIT_FEED =
   "https://www.reddit.com/r/worldnews+technology+cybersecurity+startups/hot.json?limit=12";
 const TELEGRAM_RSS =
   "https://news.google.com/rss/search?q=Telegram+news+channels+updates&hl=en-US&gl=US&ceid=US:en";
+const GITHUB_EVENTS = "https://api.github.com/events";
+const X_RSS =
+  "https://news.google.com/rss/search?q=X+Twitter+trending+news&hl=en-US&gl=US&ceid=US:en";
 
 const rssParser = new Parser({
   headers: {
@@ -66,21 +69,16 @@ const fetchHackerNews = async (): Promise<HorizonItem[]> => {
   );
 
   return items
-    .map((item) => {
-      if (!item?.title) {
-        return null;
-      }
-      return {
-        id: `hn-${item.id}`,
-        title: item.title,
-        source: `@${item.by || "hackernews"}`,
-        score: clampScore(item.score ?? 40),
-        timestamp: toIso(item.time ?? null),
-        origin: "HACKER NEWS" as const,
-        url: item.url || `https://news.ycombinator.com/item?id=${item.id}`,
-      };
-    })
-    .filter((item): item is HorizonItem => Boolean(item));
+    .filter((item): item is NonNullable<typeof item> => Boolean(item?.title))
+    .map((item) => ({
+      id: `hn-${item.id}`,
+      title: item.title!,
+      source: `@${item.by || "hackernews"}`,
+      score: clampScore(item.score ?? 40),
+      timestamp: toIso(item.time ?? null),
+      origin: "HACKER NEWS" as const,
+      url: item.url || `https://news.ycombinator.com/item?id=${item.id}`,
+    }));
 };
 
 const fetchReddit = async (): Promise<HorizonItem[]> => {
@@ -108,22 +106,19 @@ const fetchReddit = async (): Promise<HorizonItem[]> => {
   };
 
   return (payload.data?.children ?? [])
+    .filter((child): child is NonNullable<typeof child> => Boolean(child.data?.title && child.data?.id))
     .map((child) => {
-      const item = child.data;
-      if (!item?.title || !item.id) {
-        return null;
-      }
+      const item = child.data!;
       return {
         id: `reddit-${item.id}`,
-        title: item.title,
+        title: item.title!,
         source: item.author ? `u/${item.author}` : "u/reddit",
         score: clampScore(item.score ?? 30),
         timestamp: toIso(item.created_utc ?? null),
         origin: "REDDIT" as const,
         url: item.permalink ? `https://www.reddit.com${item.permalink}` : undefined,
       };
-    })
-    .filter((item): item is HorizonItem => Boolean(item));
+    });
 };
 
 const fetchTelegram = async (): Promise<HorizonItem[]> => {
@@ -155,19 +150,109 @@ const fetchTelegram = async (): Promise<HorizonItem[]> => {
   }
 };
 
+const fetchGitHub = async (): Promise<HorizonItem[]> => {
+  try {
+    const res = await fetch(GITHUB_EVENTS, {
+      headers: { "User-Agent": "news-aggregator" },
+      next: { revalidate: 120 },
+    });
+    if (!res.ok) {
+      return [];
+    }
+    const events = (await res.json()) as Array<{
+      id: string;
+      type: string;
+      repo?: { name?: string };
+      actor?: { login?: string };
+      created_at?: string;
+      payload?: {
+        action?: string;
+        ref?: string;
+        ref_type?: string;
+        description?: string;
+        commits?: Array<{ message?: string }>;
+        issue?: { title?: string; number?: number };
+        pull_request?: { title?: string; number?: number };
+      };
+    }>;
+
+    return events.slice(0, 10).map((event, idx) => {
+      let title = `${event.type} on ${event.repo?.name ?? "unknown"}`;
+      if (event.payload?.action) {
+        title = `${event.payload.action}: ${title}`;
+      }
+      const firstCommit = event.payload?.commits?.[0];
+      if (firstCommit?.message) {
+        title = firstCommit.message;
+      }
+      if (event.payload?.issue?.title) {
+        title = event.payload.issue.title;
+      }
+      if (event.payload?.pull_request?.title) {
+        title = event.payload.pull_request.title;
+      }
+
+      return {
+        id: `github-${event.id}`,
+        title,
+        source: event.actor?.login ? `@${event.actor.login}` : "@github",
+        score: clampScore(30 + (idx * 5)),
+        timestamp: toIso(event.created_at ?? null),
+        origin: "GITHUB" as const,
+        url: event.repo?.name ? `https://github.com/${event.repo.name}` : undefined,
+      };
+    });
+  } catch {
+    return [];
+  }
+};
+
+const fetchX = async (): Promise<HorizonItem[]> => {
+  try {
+    const xml = await fetch(X_RSS, { next: { revalidate: 120 } }).then(
+      async (res) => {
+        if (!res.ok) {
+          throw new Error("X RSS fetch failed");
+        }
+        return res.text();
+      },
+    );
+    const feed = await rssParser.parseString(xml);
+    return (feed.items ?? []).slice(0, 10).map((item, idx) => {
+      const title = item.title || "X trending update";
+      const baseScore = 20 + (title.length % 80);
+      return {
+        id: `x-${item.guid || idx}`,
+        title,
+        source: "@x",
+        score: clampScore(baseScore),
+        timestamp: toIso(item.isoDate || item.pubDate || null),
+        origin: "X" as const,
+        url: item.link || undefined,
+      };
+    });
+  } catch {
+    return [];
+  }
+};
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const params = url.searchParams;
   const offset = Number(params.get("offset") || "0");
-  const limit = Number(params.get("limit") || "15");
+  const limit = Number(params.get("limit") || "35");
 
-  const [hn, reddit, telegram] = await Promise.all([
+  const [hn, reddit, telegram, github, x] = await Promise.all([
     fetchHackerNews(),
     fetchReddit(),
     fetchTelegram(),
+    fetchGitHub(),
+    fetchX(),
   ]);
 
-  const all = [...hn, ...reddit, ...telegram].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
+  const all = [...hn, ...reddit, ...telegram, ...github, ...x].sort(
+    (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+  );
 
   const items = all.slice(offset, offset + limit);
 

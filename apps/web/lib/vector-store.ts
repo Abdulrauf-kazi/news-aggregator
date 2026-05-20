@@ -219,6 +219,57 @@ export async function queryTopKSimilarStories(input: {
     .slice(0, effectiveTopK);
 }
 
+/**
+ * Query by a raw embedding vector (not a story ID).
+ * Used for cross-user recommendations: embed a user's taste profile → find matching articles.
+ */
+export function queryByEmbeddingVector(input: {
+  embedding: number[];
+  topK: number;
+  excludeStoryIds?: string[];
+}): Array<{ storyId: string; similarity: number }> {
+  const queryVector = normalizeVector(input.embedding);
+  if (queryVector.length === 0 || state.storyIds.length === 0) {
+    return [];
+  }
+
+  const excludeSet = new Set(input.excludeStoryIds ?? []);
+  const effectiveTopK = Math.max(1, Math.min(input.topK, state.storyIds.length));
+
+  if (state.backend === "faiss" && state.faissIndex) {
+    const result = state.faissIndex.search(
+      Float32Array.from(queryVector),
+      effectiveTopK + excludeSet.size,
+    );
+
+    const labels = Array.isArray(result.labels?.[0])
+      ? (result.labels[0] as number[])
+      : (result.labels as number[]);
+    const distances = Array.isArray(result.distances?.[0])
+      ? (result.distances?.[0] as number[])
+      : ((result.distances as number[] | undefined) ?? []);
+
+    return labels
+      .map((label, idx) => ({
+        storyId: state.storyIds[label] ?? "",
+        similarity: Number(distances[idx] ?? 0),
+      }))
+      .filter((item) => item.storyId && !excludeSet.has(item.storyId))
+      .slice(0, effectiveTopK);
+  }
+
+  return state.storyIds
+    .map((candidateId, index) => {
+      if (excludeSet.has(candidateId)) return null;
+      const candidateVector = state.vectors[index] ?? [];
+      const similarity = cosineSimilarity(queryVector, candidateVector);
+      return { storyId: candidateId, similarity };
+    })
+    .filter((item): item is { storyId: string; similarity: number } => Boolean(item))
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, effectiveTopK);
+}
+
 export async function buildStoryRecommendations(input: {
   stories: StoryNode[];
   topK: number;

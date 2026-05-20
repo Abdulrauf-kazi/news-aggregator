@@ -13,11 +13,13 @@ type LivePayload = StoryGraph & {
     sourceMetricsCount: number;
     recommendations: string[];
     recommendationReasons: Record<string, string>;
+    socialRecommendations?: unknown[];
+    friendActivity?: unknown[];
     retrieval: {
       vectorBackend: string;
       vectorCount: number;
       graphSeedCount: number;
-      mode: "vector+graph" | "graph";
+      mode: "vector+graph" | "graph" | "vector+graph+social";
     };
     fetchedAt?: string;
     sessionId?: string;
@@ -61,7 +63,11 @@ export function LiveNewsGraphPage({
   const [data, setData] = useState<LivePayload>(withMetaDefaults(initialData));
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const [localSessionId] = useState(() => `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+  const [localSessionId, setLocalSessionId] = useState('sess_init');
+  
+  useEffect(() => {
+    setLocalSessionId(`sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+  }, []);
   const activeSessionId = data.meta.sessionId || localSessionId;
 
   const refresh = useCallback(

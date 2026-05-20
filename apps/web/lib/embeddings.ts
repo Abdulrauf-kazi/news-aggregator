@@ -125,3 +125,44 @@ export async function addEmbeddingsToStories(stories: StoryNode[]) {
 
   return embeddedStories;
 }
+
+/**
+ * Batch-embed multiple texts concurrently with concurrency control.
+ * More efficient than sequential calls during ingestion.
+ */
+export async function generateBatchEmbeddings(
+  texts: string[],
+  concurrency = 5,
+): Promise<number[][]> {
+  const results: number[][] = new Array(texts.length);
+  const queue = texts.map((text, index) => ({ text, index }));
+
+  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (!item) break;
+      results[item.index] = await generateSentenceEmbedding(item.text);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * Compute mean-pooled embedding from multiple vectors.
+ * Used to create a "taste profile" vector from a user's reading history.
+ */
+export function computeMeanEmbedding(vectors: number[][]): number[] {
+  if (vectors.length === 0) return [];
+  const dims = vectors[0]?.length ?? 0;
+  if (dims === 0) return [];
+
+  const mean = new Array<number>(dims).fill(0);
+  for (const vec of vectors) {
+    for (let i = 0; i < dims; i += 1) {
+      mean[i] = (mean[i] ?? 0) + (vec[i] ?? 0);
+    }
+  }
+  return normalizeVector(mean.map((v) => v / vectors.length));
+}
