@@ -306,7 +306,33 @@
   .footerLeft {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
+  }
+
+  .likeButton {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #a8a29e;
+    transition: all 0.2s ease;
+  }
+
+  .likeButton:hover:not(:disabled) {
+    color: #ff3e00;
+    transform: scale(1.2);
+  }
+
+  .likeButton:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  .likeButton.liked {
+    color: #ff3e00;
   }
 
   .source {

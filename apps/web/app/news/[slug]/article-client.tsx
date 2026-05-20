@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import DOMPurify from "isomorphic-dompurify";
 import type { StoryNode } from "../../../lib/graph";
+import { useSession } from "next-auth/react";
 import {
   getSourceLabel,
   getStoryPath,
@@ -77,9 +78,47 @@ export default function ArticleClient({
   story: StoryNode;
   relatedStories: StoryNode[];
 }) {
+  const { data: session } = useSession();
   const [article, setArticle] = useState<ArticlePayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isLiked, setIsLiked] = useState(false);
+  const [isLiking, setIsLiking] = useState(false);
+
+  useEffect(() => {
+    if (story.id && session?.user?.id) {
+      fetch(`/api/like?storyId=${story.id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.liked !== undefined) setIsLiked(data.liked);
+        })
+        .catch(console.error);
+    }
+  }, [story.id, session?.user?.id]);
+
+  const handleToggleLike = async () => {
+    if (!session?.user?.id || !story.id || isLiking) return;
+
+    setIsLiking(true);
+    try {
+      const res = await fetch("/api/like", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storyId: story.id,
+          topic: story.topic || "General",
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIsLiked(data.liked);
+      }
+    } catch (err) {
+      console.error("Failed to toggle like:", err);
+    } finally {
+      setIsLiking(false);
+    }
+  };
   // Prioritize publisherUrl over url for the original source link
   const [resolvedUrl, setResolvedUrl] = useState<string | null>(story.publisherUrl || story.url || null);
   const storyFallback = useMemo(() => buildStoryFallback(story), [story]);
@@ -231,15 +270,36 @@ export default function ArticleClient({
         )}
 
         {displaySourceUrl && (
-          <a
-            href={displaySourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-10 inline-flex items-center gap-2 rounded-lg bg-[#1c1917] px-5 py-3 font-headline text-[11px] font-black uppercase tracking-widest text-white transition-all hover:bg-[#ff3e00]"
-          >
-            Original source
-            <span className="material-symbols-outlined text-[15px]">open_in_new</span>
-          </a>
+          <div className="mt-10 flex items-center gap-4">
+            <a
+              href={displaySourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg bg-[#1c1917] px-5 py-3 font-headline text-[11px] font-black uppercase tracking-widest text-white transition-all hover:bg-[#ff3e00]"
+            >
+              Original source
+              <span className="material-symbols-outlined text-[15px]">open_in_new</span>
+            </a>
+            
+            <button 
+              onClick={handleToggleLike}
+              disabled={!session || isLiking}
+              className={`inline-flex items-center gap-2 rounded-lg border px-5 py-3 font-headline text-[11px] font-black uppercase tracking-widest transition-all ${
+                isLiked 
+                  ? "border-[#ff3e00] bg-[#fff5f2] text-[#ff3e00]" 
+                  : "border-[#d6d3d1] bg-white text-[#57534e] hover:border-[#ff3e00] hover:text-[#ff3e00]"
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+              title={session ? (isLiked ? "Unlike" : "Like") : "Sign in to like"}
+            >
+              <span className="material-symbols-outlined" style={{ 
+                fontSize: "18px",
+                fontVariationSettings: isLiked ? "'FILL' 1" : "'FILL' 0"
+              }}>
+                favorite
+              </span>
+              {isLiked ? "Liked" : "Like"}
+            </button>
+          </div>
         )}
       </article>
 

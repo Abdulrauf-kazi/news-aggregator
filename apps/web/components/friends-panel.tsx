@@ -18,6 +18,7 @@ type FriendActivity = {
   storyTitle: string;
   topic: string;
   readAt: string;
+  type?: "read" | "liked";
 };
 
 type FriendsData = {
@@ -233,8 +234,9 @@ export function FriendsPanel({
                     display: "flex",
                     gap: 10,
                     padding: "10px 12px",
-                    background: "#fff",
-                    border: "1px solid #e7e5e4",
+                    background: activity.type === "liked" ? "#fff5f5" : "#fff",
+                    border: `1px solid ${activity.type === "liked" ? "#fecaca" : "#e7e5e4"}`,
+                    borderLeft: activity.type === "liked" ? "3px solid #ef4444" : "1px solid #e7e5e4",
                     borderRadius: 12,
                     cursor: "pointer",
                     textAlign: "left",
@@ -273,9 +275,14 @@ export function FriendsPanel({
                       <span style={{ fontFamily: mono, fontSize: 10, fontWeight: 700, color: "#1c1917" }}>
                         {activity.userName}
                       </span>
-                      <span style={{ fontFamily: mono, fontSize: 8, color: "#a8a29e", flexShrink: 0 }}>
-                        {formatTimeAgo(activity.readAt)}
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                        {activity.type === "liked" && (
+                          <span style={{ fontSize: 10, color: "#ef4444" }}>♥</span>
+                        )}
+                        <span style={{ fontFamily: mono, fontSize: 8, color: "#a8a29e" }}>
+                          {formatTimeAgo(activity.readAt)}
+                        </span>
+                      </div>
                     </div>
                     <p
                       style={{
@@ -290,18 +297,20 @@ export function FriendsPanel({
                     >
                       {activity.storyTitle}
                     </p>
-                    <span
-                      style={{
-                        fontFamily: mono,
-                        fontSize: 8,
-                        fontWeight: 700,
-                        color: "#ff3e00",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.1em",
-                      }}
-                    >
-                      {activity.topic}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                      <span
+                        style={{
+                          fontFamily: mono,
+                          fontSize: 8,
+                          fontWeight: 700,
+                          color: activity.type === "liked" ? "#ef4444" : "#ff3e00",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.1em",
+                        }}
+                      >
+                        {activity.type === "liked" ? "Liked" : "Read"} · {activity.topic}
+                      </span>
+                    </div>
                   </div>
                 </button>
               ))}

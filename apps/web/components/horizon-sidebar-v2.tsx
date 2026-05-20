@@ -237,7 +237,9 @@ function SkeletonCard() {
 }
 
 export default function HorizonSidebar({ polymarketItems = [], onNewsClick }: HorizonSidebarProps) {
-  const [activeTab, setActiveTab] = useState<"all" | "polymarket" | "hackernews" | "reddit" | "github" | "telegram" | "x">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "friends" | "polymarket" | "hackernews" | "reddit" | "github" | "telegram" | "x">("all");
+  const [friendsLikes, setFriendsLikes] = useState<any[]>([]);
+  const [isFriendsLoading, setIsFriendsLoading] = useState(false);
   const [feedItems, setFeedItems] = useState<HorizonItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -248,6 +250,19 @@ export default function HorizonSidebar({ polymarketItems = [], onNewsClick }: Ho
   const [isPolyLoading, setIsPolyLoading] = useState(false);
   const [polyError, setPolyError] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (activeTab === "friends" && friendsLikes.length === 0) {
+      setIsFriendsLoading(true);
+      fetch("/api/friends/likes")
+        .then(res => res.json())
+        .then(data => {
+          if (data.likes) setFriendsLikes(data.likes);
+        })
+        .catch(err => console.error("Failed to fetch friends likes:", err))
+        .finally(() => setIsFriendsLoading(false));
+    }
+  }, [activeTab, friendsLikes.length]);
   const pageSize = 35;
 
   const fetchFeed = async (nextOffset = 0, append = false) => {
@@ -345,6 +360,7 @@ export default function HorizonSidebar({ polymarketItems = [], onNewsClick }: Ho
 
   const tabs = [
     { id: "all" as const, label: "All", count: tabCounts.all || 0 },
+    { id: "friends" as const, label: "Friends", count: friendsLikes.length },
     { id: "polymarket" as const, label: "Polymarket", count: sortedPolymarket.length },
     { id: "hackernews" as const, label: "HackerNews", count: tabCounts.hackernews || 0 },
     { id: "reddit" as const, label: "Reddit", count: tabCounts.reddit || 0 },
@@ -352,6 +368,31 @@ export default function HorizonSidebar({ polymarketItems = [], onNewsClick }: Ho
     { id: "telegram" as const, label: "Telegram", count: tabCounts.telegram || 0 },
     { id: "x" as const, label: "X", count: tabCounts.x || 0 },
   ];
+
+  const renderFriendsContent = () => {
+    if (isFriendsLoading) {
+      return (
+        <div className="space-y-4">
+          {[1, 2, 3].map(i => <SkeletonCard key={i} />)}
+        </div>
+      );
+    }
+    if (friendsLikes.length === 0) {
+      return (
+        <div className="p-8 text-center text-gray-400 text-xs uppercase font-bold tracking-widest">
+          No friend activity detected
+        </div>
+      );
+    }
+    return friendsLikes.map((like, idx) => (
+      <div key={idx} className="relative mb-4">
+        <div className="absolute -top-2 -left-2 z-10 bg-[#ff3e00] text-white text-[8px] font-black px-2 py-0.5 rounded-full shadow-sm uppercase tracking-tighter">
+          Liked by {like.userName}
+        </div>
+        <FeedCard item={like.story} onClick={onNewsClick} />
+      </div>
+    ));
+  };
 
   const renderFeedContent = () => {
     if (isLoading) {
@@ -438,7 +479,7 @@ export default function HorizonSidebar({ polymarketItems = [], onNewsClick }: Ho
       </div>
 
       <div className="flex-grow overflow-y-auto p-4 custom-scrollbar" ref={scrollContainerRef}>
-        {isPolymarketTab ? renderPolymarketContent() : (
+        {isPolymarketTab ? renderPolymarketContent() : activeTab === "friends" ? renderFriendsContent() : (
           <>
             {renderFeedContent()}
             

@@ -3,6 +3,7 @@ import {
   getFollowingIds,
   getMultipleUsersReadingHistory,
   getUserReadingHistory,
+  getFriendsLikedStoryIdsByFriendIds,
   type UserInteraction,
 } from "./social-db";
 
@@ -23,6 +24,7 @@ export type FriendActivity = {
   storyTitle: string;
   topic: string;
   readAt: string;
+  type?: "read" | "liked";
 };
 
 // ── Core ALS-Style Collaborative Filtering ───────────────────────────────────
@@ -74,10 +76,11 @@ export async function buildFriendRecommendations(input: {
     return { recommendations: [], friendActivity: [] };
   }
 
-  // 2. Get reading histories: current user + all friends
-  const [userHistory, friendHistories] = await Promise.all([
+  // 2. Get reading histories + liked story IDs for all friends in parallel
+  const [userHistory, friendHistories, friendLikeMap] = await Promise.all([
     getUserReadingHistory(input.userId, 100),
     getMultipleUsersReadingHistory(friendIds, 50),
+    getFriendsLikedStoryIdsByFriendIds(friendIds),
   ]);
 
   const userStorySet = new Set(userHistory.map((h) => h.storyId));
@@ -91,39 +94,73 @@ export async function buildFriendRecommendations(input: {
     friendSimilarities.set(friendId, similarity);
   }
 
-  // 4. Score candidate articles (ALS item-score prediction analog)
+  // 4. Score candidate articles — likes get a 1.5× multiplier on top of their weight=10
   const candidateScores = new Map<
     string,
-    { score: number; friendIds: string[]; friendNames: string[] }
+    {
+      score: number;
+      friendIds: string[];
+      friendNames: string[];
+      likedByFriendIds: string[];
+      likedByFriendNames: string[];
+    }
   >();
 
   for (const [friendId, friendHistory] of friendHistories) {
     const friendSim = friendSimilarities.get(friendId) ?? 0;
-    // Base weight for friends with no reading overlap yet
     const effectiveSimilarity = Math.max(0.1, friendSim);
+    const friendLikes = friendLikeMap.get(friendId) ?? new Set<string>();
+    const friendName = input.friendNames?.get(friendId) ?? friendId.slice(0, 6);
 
     for (const interaction of friendHistory) {
-      // Skip articles the user already read
       if (userStorySet.has(interaction.storyId)) continue;
-      // Skip articles not in current graph
       if (!storyById.has(interaction.storyId)) continue;
+
+      const isLiked = friendLikes.has(interaction.storyId);
+      const likeBoost = isLiked ? 1.5 : 1.0;
 
       const existing = candidateScores.get(interaction.storyId) ?? {
         score: 0,
         friendIds: [],
         friendNames: [],
+        likedByFriendIds: [],
+        likedByFriendNames: [],
       };
 
-      // ALS-style score: user_similarity * item_interaction_weight
-      existing.score += effectiveSimilarity * interaction.weight;
+      existing.score += effectiveSimilarity * interaction.weight * likeBoost;
+
       if (!existing.friendIds.includes(friendId)) {
         existing.friendIds.push(friendId);
-        const friendName =
-          input.friendNames?.get(friendId) ?? friendId.slice(0, 6);
         existing.friendNames.push(friendName);
+      }
+      if (isLiked && !existing.likedByFriendIds.includes(friendId)) {
+        existing.likedByFriendIds.push(friendId);
+        existing.likedByFriendNames.push(friendName);
       }
 
       candidateScores.set(interaction.storyId, existing);
+    }
+  }
+
+  // Also surface stories that friends liked but haven't yet generated
+  // a user_interaction record (race between toggleLike and CF)
+  for (const [friendId, likedIds] of friendLikeMap) {
+    const friendSim = friendSimilarities.get(friendId) ?? 0;
+    const effectiveSimilarity = Math.max(0.1, friendSim);
+    const friendName = input.friendNames?.get(friendId) ?? friendId.slice(0, 6);
+
+    for (const storyId of likedIds) {
+      if (userStorySet.has(storyId)) continue;
+      if (!storyById.has(storyId)) continue;
+      if (candidateScores.has(storyId)) continue; // already scored via interactions
+
+      candidateScores.set(storyId, {
+        score: effectiveSimilarity * 10 * 1.5,
+        friendIds: [friendId],
+        friendNames: [friendName],
+        likedByFriendIds: [friendId],
+        likedByFriendNames: [friendName],
+      });
     }
   }
 
@@ -134,16 +171,28 @@ export async function buildFriendRecommendations(input: {
 
   const recommendations: SocialRecommendation[] = sorted.map(
     ([storyId, data]) => {
-      const friendCount = data.friendIds.length;
       const story = storyById.get(storyId);
+      const likedBy = data.likedByFriendNames;
+      const readBy = data.friendNames;
 
       let reason: string;
-      if (friendCount === 1) {
-        reason = `Read by ${data.friendNames[0]}`;
-      } else if (friendCount <= 3) {
-        reason = `Read by ${data.friendNames.join(" & ")}`;
+      if (likedBy.length > 0) {
+        if (likedBy.length === 1) {
+          reason = `Liked by ${likedBy[0]}`;
+        } else if (likedBy.length <= 3) {
+          reason = `Liked by ${likedBy.join(" & ")}`;
+        } else {
+          reason = `Liked by ${likedBy[0]} and ${likedBy.length - 1} others`;
+        }
       } else {
-        reason = `Read by ${data.friendNames[0]} and ${friendCount - 1} others in your network`;
+        const friendCount = readBy.length;
+        if (friendCount === 1) {
+          reason = `Read by ${readBy[0]}`;
+        } else if (friendCount <= 3) {
+          reason = `Read by ${readBy.join(" & ")}`;
+        } else {
+          reason = `Read by ${readBy[0]} and ${friendCount - 1} others in your network`;
+        }
       }
 
       if (story) {
@@ -160,34 +209,54 @@ export async function buildFriendRecommendations(input: {
     },
   );
 
-  // 6. Build friend activity feed (recent reads by friends)
-  const friendActivity: FriendActivity[] = [];
+  // 6. Build friend activity feed — merge reads and likes, most recent first
+  const activityMap = new Map<string, FriendActivity>(); // key: friendId+storyId
+
   for (const [friendId, friendHistory] of friendHistories) {
-    const friendName =
-      input.friendNames?.get(friendId) ?? friendId.slice(0, 6);
+    const friendName = input.friendNames?.get(friendId) ?? friendId.slice(0, 6);
     for (const interaction of friendHistory.slice(0, 5)) {
       const story = storyById.get(interaction.storyId);
-      if (story) {
-        friendActivity.push({
-          userId: friendId,
-          userName: friendName,
-          storyId: interaction.storyId,
-          storyTitle: story.title,
-          topic: story.topic,
-          readAt: interaction.createdAt.toISOString(),
-        });
-      }
+      if (!story) continue;
+      const key = `${friendId}:${interaction.storyId}`;
+      activityMap.set(key, {
+        userId: friendId,
+        userName: friendName,
+        storyId: interaction.storyId,
+        storyTitle: story.title,
+        topic: story.topic,
+        readAt: interaction.createdAt.toISOString(),
+        type: "read",
+      });
     }
   }
 
-  // Sort activity by recency
-  friendActivity.sort(
-    (a, b) => new Date(b.readAt).getTime() - new Date(a.readAt).getTime(),
-  );
+  // Overlay liked entries — they take priority over plain "read" entries
+  for (const [friendId, likedIds] of friendLikeMap) {
+    const friendName = input.friendNames?.get(friendId) ?? friendId.slice(0, 6);
+    for (const storyId of likedIds) {
+      const story = storyById.get(storyId);
+      if (!story) continue;
+      const key = `${friendId}:${storyId}`;
+      const existing = activityMap.get(key);
+      activityMap.set(key, {
+        userId: friendId,
+        userName: friendName,
+        storyId,
+        storyTitle: story.title,
+        topic: story.topic,
+        readAt: existing?.readAt ?? new Date().toISOString(),
+        type: "liked",
+      });
+    }
+  }
+
+  const friendActivity = Array.from(activityMap.values())
+    .sort((a, b) => new Date(b.readAt).getTime() - new Date(a.readAt).getTime())
+    .slice(0, 20);
 
   return {
     recommendations,
-    friendActivity: friendActivity.slice(0, 20),
+    friendActivity,
   };
 }
 

@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import DOMPurify from "isomorphic-dompurify";
 import styles from "./NewsModal.module.css";
+import { useSession } from "next-auth/react";
 
 export type NewsModalItem = {
-  id?: string | number;
+  id: string;
   title?: string;
   name?: string;
   handle?: string;
@@ -16,6 +17,8 @@ export type NewsModalItem = {
   timestamp?: string;
   url?: string;
   score?: number;
+  price?: number;
+  volume?: string;
 };
 
 type ArticlePayload = {
@@ -38,9 +41,47 @@ interface NewsModalProps {
 }
 
 const NewsModal: React.FC<NewsModalProps> = ({ item, onClose }) => {
+  const { data: session } = useSession();
   const [article, setArticle] = useState<ArticlePayload | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isLiked, setIsLiked] = useState(false);
+  const [isLiking, setIsLiking] = useState(false);
+
+  useEffect(() => {
+    if (item?.id && session?.user?.id) {
+      fetch(`/api/like?storyId=${item.id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.liked !== undefined) setIsLiked(data.liked);
+        })
+        .catch(console.error);
+    }
+  }, [item?.id, session?.user?.id]);
+
+  const handleToggleLike = async () => {
+    if (!session?.user?.id || !item?.id || isLiking) return;
+
+    setIsLiking(true);
+    try {
+      const res = await fetch("/api/like", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storyId: item.id,
+          topic: item.category || "General",
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIsLiked(data.liked);
+      }
+    } catch (err) {
+      console.error("Failed to toggle like:", err);
+    } finally {
+      setIsLiking(false);
+    }
+  };
 
   useEffect(() => {
     let isActive = true;
@@ -193,6 +234,19 @@ const NewsModal: React.FC<NewsModalProps> = ({ item, onClose }) => {
         </div>
         <div className={styles.footer}>
           <div className={styles.footerLeft}>
+            <button 
+              className={`${styles.likeButton} ${isLiked ? styles.liked : ""}`} 
+              onClick={handleToggleLike}
+              disabled={!session}
+              title={session ? (isLiked ? "Unlike" : "Like") : "Sign in to like"}
+            >
+              <span className="material-symbols-outlined" style={{ 
+                fontVariationSettings: isLiked ? "'FILL' 1" : "'FILL' 0",
+                color: isLiked ? "#ff3e00" : "inherit"
+              }}>
+                favorite
+              </span>
+            </button>
             <span className={styles.source}>
               {[item.origin || item.platform, item.category].filter(Boolean).join(" • ") || "Global Intel"}
             </span>

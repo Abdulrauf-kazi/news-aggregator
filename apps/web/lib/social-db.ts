@@ -17,6 +17,13 @@ export type UserInteraction = {
   createdAt: Date;
 };
 
+export type Like = {
+  userId: string;
+  storyId: string;
+  topic: string;
+  createdAt: Date;
+};
+
 export type UserSummary = {
   id: string;
   name: string;
@@ -296,4 +303,155 @@ export async function getUserRecentStoryIds(
 ): Promise<string[]> {
   const history = await getUserReadingHistory(userId, limit);
   return history.map((h) => h.storyId);
+}
+
+export async function getUserTopicInterests(userId: string): Promise<Record<string, number>> {
+  const db = await getDb();
+  const interactions = await db
+    .collection<UserInteraction>("user_interactions")
+    .find({ userId })
+    .toArray();
+
+  const topicWeights: Record<string, number> = {};
+  for (const interaction of interactions) {
+    if (interaction.topic) {
+      topicWeights[interaction.topic] = (topicWeights[interaction.topic] || 0) + interaction.weight;
+    }
+  }
+  return topicWeights;
+}
+
+// ── Likes ────────────────────────────────────────────────────────────────────
+
+export async function toggleLike(
+  userId: string,
+  storyId: string,
+  topic: string,
+): Promise<{ liked: boolean }> {
+  const db = await getDb();
+  const collection = db.collection<Like>("likes");
+
+  const existing = await collection.findOne({ userId, storyId });
+
+  if (existing) {
+    await collection.deleteOne({ userId, storyId });
+    return { liked: false };
+  } else {
+    await collection.insertOne({
+      userId,
+      storyId,
+      topic,
+      createdAt: new Date(),
+    });
+    // Record a high-weight interaction for recommendation logic
+    await recordUserStoryInteraction({
+      userId,
+      storyId,
+      topic,
+      weight: 10, // High weight for likes
+    });
+    return { liked: true };
+  }
+}
+
+export async function isStoryLiked(
+  userId: string,
+  storyId: string,
+): Promise<boolean> {
+  const db = await getDb();
+  const doc = await db.collection<Like>("likes").findOne({ userId, storyId });
+  return doc !== null;
+}
+
+export async function getStoryLikeCounts(
+  storyIds: string[],
+): Promise<Record<string, number>> {
+  if (storyIds.length === 0) return {};
+  const db = await getDb();
+  const counts = await db
+    .collection<Like>("likes")
+    .aggregate([
+      { $match: { storyId: { $in: storyIds } } },
+      { $group: { _id: "$storyId", count: { $sum: 1 } } },
+    ])
+    .toArray();
+  const result: Record<string, number> = {};
+  for (const c of counts) {
+    result[c._id as string] = c.count as number;
+  }
+  return result;
+}
+
+// Used by collaborative-filtering to find which stories friends have liked
+export async function getFriendsLikedStoryIdsByFriendIds(
+  friendIds: string[],
+): Promise<Map<string, Set<string>>> {
+  if (friendIds.length === 0) return new Map();
+  const db = await getDb();
+  const likes = await db
+    .collection<Like>("likes")
+    .find({ userId: { $in: friendIds } })
+    .toArray();
+  const result = new Map<string, Set<string>>();
+  for (const like of likes) {
+    const existing = result.get(like.userId) ?? new Set<string>();
+    existing.add(like.storyId);
+    result.set(like.userId, existing);
+  }
+  return result;
+}
+
+export async function getFriendsLikes(userId: string, limit = 50): Promise<any[]> {
+  const friendIds = await getFollowingIds(userId);
+  if (friendIds.length === 0) return [];
+
+  const db = await getDb();
+  // Get recent likes from friends
+  const likes = await db
+    .collection<Like>("likes")
+    .find({ userId: { $in: friendIds } })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray();
+
+  if (likes.length === 0) return [];
+
+  // Get story details for these likes
+  const storyIds = likes.map((l) => l.storyId);
+  const stories = await db
+    .collection("stories")
+    .find({ id: { $in: storyIds } })
+    .toArray();
+
+  const storyMap = new Map(stories.map((s) => [s.id, s]));
+  
+  // Get friend names
+  const friendObjectIds = friendIds.map(id => {
+    try { return new ObjectId(id); } catch { return null; }
+  }).filter(Boolean) as ObjectId[];
+  
+  const friends = await db.collection("users").find({ _id: { $in: friendObjectIds } }).toArray();
+  const friendMap = new Map(friends.map(f => [f._id.toString(), (f.name as string) || "Anonymous"]));
+
+  return likes.map((l) => {
+    const story = storyMap.get(l.storyId);
+    if (!story) return null;
+    
+    // Convert StoryNode to HorizonItem-like object for FeedCard
+    const mappedStory = {
+      id: story.id,
+      title: story.title,
+      source: story.sourceIds?.[0] || "unknown",
+      score: story.score || 50,
+      timestamp: story.timestamp,
+      origin: (story.topic || "Intelligence").toUpperCase(),
+      url: story.url,
+    };
+
+    return {
+      ...l,
+      story: mappedStory,
+      userName: friendMap.get(l.userId) || "A friend",
+    };
+  }).filter(Boolean);
 }

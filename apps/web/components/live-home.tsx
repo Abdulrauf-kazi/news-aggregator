@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, useMemo, useRef } from "react";
+import { useSession } from "next-auth/react";
 import { NewsGraph } from "./news-graph";
 import HorizonSidebar from "./horizon-sidebar-v2";
 import { FriendsPanel } from "./friends-panel";
+import NewsModal, { type NewsModalItem } from "./NewsModal/NewsModal";
 import type { StoryGraph } from "../lib/graph";
 import { getStoryPath } from "../lib/news-routing";
 import { AnimatePresence, motion } from "framer-motion";
@@ -69,12 +71,20 @@ const withMetaDefaults = (payload: LivePayload): LivePayload => {
   };
 };
 
+type LikesData = {
+  liked: Record<string, boolean>;
+  counts: Record<string, number>;
+};
+
 export function LiveHome({ initialData }: { initialData: LivePayload }) {
   const router = useRouter();
+  const { data: session } = useSession();
   const [data, setData] = useState<LivePayload>(withMetaDefaults(initialData));
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSidebarVisible, setIsSidebarVisible] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(420);
+  const [selectedSidebarItem, setSelectedSidebarItem] = useState<NewsModalItem | null>(null);
+  const [likesData, setLikesData] = useState<LikesData>({ liked: {}, counts: {} });
   const resizingRef = useRef(false);
   const { setStories } = useStories();
   
@@ -108,6 +118,53 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
   useEffect(() => {
     setStories(data.stories);
   }, [data.stories, setStories]);
+
+  // Batch-load like counts + user's liked state for all visible stories
+  useEffect(() => {
+    const storyIds = data.stories.map((s) => s.id).slice(0, 80);
+    if (storyIds.length === 0) return;
+    const params = new URLSearchParams({ storyIds: storyIds.join(",") });
+    fetch(`/api/like?${params}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((d) => {
+        if (d) setLikesData({ liked: d.liked ?? {}, counts: d.counts ?? {} });
+      })
+      .catch(() => {});
+  }, [data.stories]);
+
+  const handleLike = useCallback(async (storyId: string, topic: string) => {
+    if (!session?.user) return;
+
+    let wasLiked = false;
+    setLikesData((prev) => {
+      wasLiked = prev.liked[storyId] ?? false;
+      return {
+        liked: { ...prev.liked, [storyId]: !wasLiked },
+        counts: {
+          ...prev.counts,
+          [storyId]: Math.max(0, (prev.counts[storyId] ?? 0) + (wasLiked ? -1 : 1)),
+        },
+      };
+    });
+
+    try {
+      const res = await fetch("/api/like", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storyId, topic }),
+      });
+      if (!res.ok) throw new Error("Failed");
+    } catch {
+      // Rollback optimistic update
+      setLikesData((prev) => ({
+        liked: { ...prev.liked, [storyId]: wasLiked },
+        counts: {
+          ...prev.counts,
+          [storyId]: Math.max(0, (prev.counts[storyId] ?? 0) + (wasLiked ? 1 : -1)),
+        },
+      }));
+    }
+  }, [session]);
 
   const refresh = useCallback(async (force = false) => {
     setIsRefreshing(true);
@@ -231,7 +288,10 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
                   </p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {friendRecommendedStories.slice(0, 6).map((story) => (
+                  {friendRecommendedStories.slice(0, 6).map((story) => {
+                    const isLiked = likesData.liked[story.id] ?? false;
+                    const likeCount = likesData.counts[story.id] ?? 0;
+                    return (
                     <Link
                       key={`social-${story.id}`}
                       href={getStoryPath(story)}
@@ -254,7 +314,6 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
                           <h4 className="font-headline font-bold text-[#1c1917] text-[15px] mb-2 group-hover:text-[#059669] transition-colors leading-tight line-clamp-2 uppercase tracking-tight">
                             {story.title || "Signal pending classification"}
                           </h4>
-                          {/* Social reason */}
                           <p className="text-[10px] text-[#10b981] font-headline font-bold mb-3 flex items-center gap-1">
                             <span>👥</span> {socialReasonMap.get(story.id) ?? "Recommended by your network"}
                           </p>
@@ -264,11 +323,34 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
                         </div>
                         <div className="mt-auto pt-5 border-t border-[#ecfdf5] flex justify-between items-center">
                           <span className="text-[9px] font-headline font-black text-[#a8a29e] uppercase tracking-widest">{story.sourceIds?.[0] || "NETWORK"}</span>
-                          <span className="material-symbols-outlined text-[18px] text-[#d6d3d1] group-hover:text-[#10b981] transition-colors">arrow_right_alt</span>
+                          <div className="flex items-center gap-2">
+                            {session?.user && (
+                              <button
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleLike(story.id, story.topic); }}
+                                className="flex items-center gap-1 transition-colors"
+                                style={{ color: isLiked ? "#ef4444" : "#a8a29e" }}
+                                aria-label={isLiked ? "Unlike" : "Like"}
+                              >
+                                <span
+                                  className="material-symbols-outlined text-[16px]"
+                                  style={{ fontVariationSettings: isLiked ? "'FILL' 1" : "'FILL' 0" }}
+                                >favorite</span>
+                                {likeCount > 0 && <span className="text-[9px] font-headline font-black">{likeCount}</span>}
+                              </button>
+                            )}
+                            {!session?.user && likeCount > 0 && (
+                              <span className="flex items-center gap-1 text-[#a8a29e]">
+                                <span className="material-symbols-outlined text-[16px]" style={{ fontVariationSettings: "'FILL' 0" }}>favorite</span>
+                                <span className="text-[9px] font-headline font-black">{likeCount}</span>
+                              </span>
+                            )}
+                            <span className="material-symbols-outlined text-[18px] text-[#d6d3d1] group-hover:text-[#10b981] transition-colors">arrow_right_alt</span>
+                          </div>
                         </div>
                       </article>
                     </Link>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -283,7 +365,10 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
                   <p className="text-[10px] font-headline text-[#a8a29e] uppercase font-bold tracking-widest">{mainFeedStories.length} Global Signals Linked</p>
                </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {mainFeedStories.map((story) => (
+                {mainFeedStories.map((story) => {
+                  const isLiked = likesData.liked[story.id] ?? false;
+                  const likeCount = likesData.counts[story.id] ?? 0;
+                  return (
                   <Link
                     key={story.id}
                     href={getStoryPath(story)}
@@ -292,7 +377,6 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
                     className="block h-full"
                   >
                     <article
-                      key={story.id} 
                       className="premium-card h-full rounded-2xl p-6 cursor-pointer group flex flex-col bg-white shadow-sm border border-[#d6d3d1] hover:border-[#ff3e00] transition-all hover:shadow-xl"
                     >
                        <div className="flex justify-between items-start mb-5">
@@ -309,11 +393,34 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
                     </div>
                        <div className="mt-auto pt-5 border-t border-[#f5f5f4] flex justify-between items-center">
                           <span className="text-[9px] font-headline font-black text-[#a8a29e] uppercase tracking-widest">{story.sourceIds?.[0] || "NETWORK"}</span>
-                          <span className="material-symbols-outlined text-[18px] text-[#d6d3d1] group-hover:text-[#ff3e00] transition-colors">arrow_right_alt</span>
+                          <div className="flex items-center gap-2">
+                            {session?.user && (
+                              <button
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleLike(story.id, story.topic); }}
+                                className="flex items-center gap-1 transition-colors"
+                                style={{ color: isLiked ? "#ef4444" : "#a8a29e" }}
+                                aria-label={isLiked ? "Unlike" : "Like"}
+                              >
+                                <span
+                                  className="material-symbols-outlined text-[16px]"
+                                  style={{ fontVariationSettings: isLiked ? "'FILL' 1" : "'FILL' 0" }}
+                                >favorite</span>
+                                {likeCount > 0 && <span className="text-[9px] font-headline font-black">{likeCount}</span>}
+                              </button>
+                            )}
+                            {!session?.user && likeCount > 0 && (
+                              <span className="flex items-center gap-1 text-[#a8a29e]">
+                                <span className="material-symbols-outlined text-[16px]" style={{ fontVariationSettings: "'FILL' 0" }}>favorite</span>
+                                <span className="text-[9px] font-headline font-black">{likeCount}</span>
+                              </span>
+                            )}
+                            <span className="material-symbols-outlined text-[18px] text-[#d6d3d1] group-hover:text-[#ff3e00] transition-colors">arrow_right_alt</span>
+                          </div>
                        </div>
                     </article>
                   </Link>
-                  ))}
+                  );
+                })}
                </div>
             </div>
           </div>
@@ -360,7 +467,7 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
               <div className="border-t border-[#e7e5e4] pt-4">
                 <HorizonSidebar
                   polymarketItems={polymarketItems}
-                  onNewsClick={(item) => item.url && window.open(item.url, "_blank", "noopener,noreferrer")}
+                  onNewsClick={(item) => setSelectedSidebarItem(item)}
                 />
               </div>
             </div>
@@ -374,6 +481,10 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
         </AnimatePresence>
       </div>
 
+      <NewsModal 
+        item={selectedSidebarItem} 
+        onClose={() => setSelectedSidebarItem(null)} 
+      />
     </div>
   );
 }

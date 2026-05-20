@@ -134,33 +134,30 @@ export async function personalizeStoriesForSession(input: {
 
 export async function getSessionRelevanceByStory(input: {
   sessionId?: string;
+  userId?: string;
   stories: StoryNode[];
 }): Promise<Record<string, number>> {
   const sessionIdRaw = input.sessionId?.trim();
-  if (!sessionIdRaw) {
-    return {};
-  }
-  const sessionId = clampSessionId(sessionIdRaw);
-  if (!sessionId) {
-    return {};
-  }
-
-  const [topicWeights, storyWeights] = await Promise.all([
-    getJsonValue<SessionTopicWeights>(topicsKey(sessionId)),
-    getJsonValue<SessionStoryWeights>(storiesKey(sessionId)),
+  const userId = input.userId;
+  
+  const [topicWeights, storyWeights, userTopicInterests] = await Promise.all([
+    sessionIdRaw ? getJsonValue<SessionTopicWeights>(topicsKey(clampSessionId(sessionIdRaw))) : Promise.resolve(null),
+    sessionIdRaw ? getJsonValue<SessionStoryWeights>(storiesKey(clampSessionId(sessionIdRaw))) : Promise.resolve(null),
+    userId ? import("./social-db").then(m => m.getUserTopicInterests(userId)) : Promise.resolve(null),
   ]);
 
-  if (!topicWeights && !storyWeights) {
+  if (!topicWeights && !storyWeights && !userTopicInterests) {
     return {};
   }
 
   const topicMap = topicWeights ?? {};
   const storyMap = storyWeights ?? {};
+  const userTopicMap = userTopicInterests ?? {};
 
   const rawScores: Record<string, number> = {};
   let maxScore = 0;
   for (const story of input.stories) {
-    const value = (topicMap[story.topic] ?? 0) + (storyMap[story.id] ?? 0);
+    const value = (topicMap[story.topic] ?? 0) + (storyMap[story.id] ?? 0) + (userTopicMap[story.topic] ?? 0);
     rawScores[story.id] = value;
     if (value > maxScore) {
       maxScore = value;

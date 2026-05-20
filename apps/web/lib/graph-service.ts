@@ -398,6 +398,7 @@ const rankGraphByScores = async (input: {
   const [sessionRelevance, socialRelevance] = await Promise.all([
     getSessionRelevanceByStory({
       sessionId: input.sessionId,
+      userId: input.userId,
       stories: input.graph.stories,
     }),
     getSocialRelevanceScores({

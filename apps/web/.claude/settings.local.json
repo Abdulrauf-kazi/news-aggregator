@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"e:\\\\news-aggregator\\\\apps\\\\web\\\\lib\" -Name)",
+      "Bash(Get-ChildItem -Path \"e:\\\\news-aggregator\\\\apps\\\\web\\\\app\\\\api\" -Directory)",
+      "Bash(Select-Object -ExpandProperty Name)",
+      "Bash(Find-Item -Path \"e:\\\\news-aggregator\\\\apps\\\\web\\\\app\" -Filter \"page.tsx\")",
+      "Bash(Select-Object -First 5 FullName)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}
