@@ -68,17 +68,21 @@ const fetchHackerNews = async (): Promise<HorizonItem[]> => {
     }),
   );
 
-  return items
-    .filter((item): item is NonNullable<typeof item> => Boolean(item?.title))
-    .map((item) => ({
-      id: `hn-${item.id}`,
-      title: item.title!,
-      source: `@${item.by || "hackernews"}`,
-      score: clampScore(item.score ?? 40),
-      timestamp: toIso(item.time ?? null),
-      origin: "HACKER NEWS" as const,
-      url: item.url || `https://news.ycombinator.com/item?id=${item.id}`,
-    }));
+  const results: HorizonItem[] = [];
+  for (const item of items) {
+    if (item && item.title) {
+      results.push({
+        id: `hn-${item.id}`,
+        title: item.title,
+        source: `@${item.by || "hackernews"}`,
+        score: clampScore(item.score ?? 40),
+        timestamp: toIso(item.time ?? null),
+        origin: "HACKER NEWS",
+        url: item.url || `https://news.ycombinator.com/item?id=${item.id}`,
+      });
+    }
+  }
+  return results;
 };
 
 const fetchReddit = async (): Promise<HorizonItem[]> => {
@@ -105,20 +109,23 @@ const fetchReddit = async (): Promise<HorizonItem[]> => {
     };
   };
 
-  return (payload.data?.children ?? [])
-    .filter((child): child is NonNullable<typeof child> => Boolean(child.data?.title && child.data?.id))
-    .map((child) => {
-      const item = child.data!;
-      return {
+  const results: HorizonItem[] = [];
+  const children = payload.data?.children ?? [];
+  for (const child of children) {
+    const item = child.data;
+    if (item && item.title && item.id) {
+      results.push({
         id: `reddit-${item.id}`,
-        title: item.title!,
+        title: item.title,
         source: item.author ? `u/${item.author}` : "u/reddit",
         score: clampScore(item.score ?? 30),
         timestamp: toIso(item.created_utc ?? null),
-        origin: "REDDIT" as const,
+        origin: "REDDIT",
         url: item.permalink ? `https://www.reddit.com${item.permalink}` : undefined,
-      };
-    });
+      });
+    }
+  }
+  return results;
 };
 
 const fetchTelegram = async (): Promise<HorizonItem[]> => {
@@ -132,20 +139,25 @@ const fetchTelegram = async (): Promise<HorizonItem[]> => {
       },
     );
     const feed = await rssParser.parseString(xml);
-    return (feed.items ?? []).slice(0, 10).map((item, idx) => {
+    const results: HorizonItem[] = [];
+
+    const items = (feed.items ?? []).slice(0, 10);
+    for (const item of items) {
       const title = item.title || "Telegram update";
       const baseScore = 24 + (title.length % 90);
-      return {
-        id: `telegram-${item.guid || idx}`,
+      results.push({
+        id: `telegram-${item.guid || Math.random().toString(36).slice(2)}`,
         title,
         source: "@telegram",
         score: clampScore(baseScore),
         timestamp: toIso(item.isoDate || item.pubDate || null),
-        origin: "TELEGRAM" as const,
+        origin: "TELEGRAM",
         url: item.link || undefined,
-      };
-    });
-  } catch {
+      });
+    }
+    return results;
+  } catch (error) {
+    console.error("Telegram fetch error:", error);
     return [];
   }
 };
@@ -242,19 +254,26 @@ export async function GET(req: Request) {
   const offset = Number(params.get("offset") || "0");
   const limit = Number(params.get("limit") || "35");
 
-  const [hn, reddit, telegram, github, x] = await Promise.all([
-    fetchHackerNews(),
-    fetchReddit(),
-    fetchTelegram(),
-    fetchGitHub(),
-    fetchX(),
-  ]);
+  try {
+    const [hn, reddit, telegram, github, x] = await Promise.all([
+      fetchHackerNews(),
+      fetchReddit(),
+      fetchTelegram(),
+      fetchGitHub(),
+      fetchX(),
+    ]);
 
-  const all = [...hn, ...reddit, ...telegram, ...github, ...x].sort(
-    (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
-  );
+    const all = [...hn, ...reddit, ...telegram, ...github, ...x].sort(
+      (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+    );
 
-  const items = all.slice(offset, offset + limit);
+    const items = all.slice(offset, offset + limit);
 
-  return NextResponse.json({ items, offset, limit, total: all.length });
+    return NextResponse.json({ items, offset, limit, total: all.length });
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Internal server error fetching signals" },
+      { status: 500 }
+    );
+  }
 }

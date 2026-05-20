@@ -85,8 +85,6 @@ const NewsModal: React.FC<NewsModalProps> = ({ item, onClose }) => {
   const subtitlePieces = [item?.source || item?.handle, item?.origin || item?.category].filter(Boolean);
   const subtitle = subtitlePieces.join(" • ");
   
-  // Use item.text as the primary summary/lead if available, otherwise use article description
-  // Fallback to a context-aware description if both are missing
   const leadText = useMemo(() => {
     if (item?.text) return item.text;
     if (article?.description) return article.description;
@@ -180,9 +178,6 @@ const NewsModal: React.FC<NewsModalProps> = ({ item, onClose }) => {
             )}
             {!isLoading && !sanitizedHtml && article?.text && (
               <p>{article.text}</p>
-            )}
-            {!isLoading && !sanitizedHtml && !article?.text && leadText && (
-              <p className={styles.lead}>{leadText}</p>
             )}
             {!isLoading && !sanitizedHtml && !article?.text && !leadText && !error && (
               <p className={styles.noContent}>Full article content could not be extracted. Please use the original link below.</p>

@@ -43,7 +43,6 @@ export default function ProfilePage() {
 
     if (status === "authenticated") {
       fetchProfile();
-      // Fetch social counts
       fetch("/api/friends")
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
