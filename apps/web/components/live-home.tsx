@@ -9,6 +9,7 @@ import { FriendsPanel } from "./friends-panel";
 import type { StoryGraph } from "../lib/graph";
 import { getStoryPath } from "../lib/news-routing";
 import { AnimatePresence, motion } from "framer-motion";
+import { useStories } from "../lib/stories-context";
 
 type SocialRecommendation = {
   storyId: string;
@@ -75,6 +76,7 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
   const [isSidebarVisible, setIsSidebarVisible] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(420);
   const resizingRef = useRef(false);
+  const { setStories } = useStories();
   
   useEffect(() => {
     const handleToggle = () => setIsSidebarVisible((prev) => !prev);
@@ -102,6 +104,10 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
       window.removeEventListener("mouseup", onMouseUp);
     };
   }, []);
+
+  useEffect(() => {
+    setStories(data.stories);
+  }, [data.stories, setStories]);
 
   const refresh = useCallback(async (force = false) => {
     setIsRefreshing(true);
