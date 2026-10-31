@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { TOPIC_COLORS } from "../lib/topic-colors";
 import * as d3 from "d3-force";
 import type { GraphEdge, GraphNode } from "../lib/graph";
 
@@ -63,7 +64,7 @@ export function NewsGraph({
   useEffect(() => {
     const storyNodes = nodes.filter((node) => node.type === "story");
     const newNodes = storyNodes.map((n) => {
-      const colorMatch = n.topic ? stringToColor(n.topic) : "#a8a29e";
+      const colorMatch = n.topic ? (TOPIC_COLORS[n.topic] ?? stringToColor(n.topic)) : "#a8a29e";
       const baseSize = Math.random() * 2 + 5;
       return { 
         ...n, 
@@ -487,32 +488,39 @@ export function NewsGraph({
       ref={containerRef}
       className="w-full h-full relative overflow-hidden bg-[#f5f5f4] rounded-2xl border border-[#d6d3d1] shadow-inner"
     >
-      <div className="absolute top-5 left-5 z-20 pointer-events-none">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-2 h-2 bg-accent rounded-full animate-pulse shadow-[0_0_8px_var(--color-accent)]"></span>
-            <span className="text-[10px] font-headline uppercase tracking-[0.2em] text-primary font-bold">Intelligence Matrix</span>
-          </div>
-          <p className="text-[9px] text-secondary font-headline uppercase tracking-widest">Interactive Sandbox</p>
-          <p className="text-[9px] text-secondary font-headline uppercase tracking-widest bg-white/50 inline-block px-1.5 py-0.5 rounded-sm w-fit mt-1 border border-[#e7e5e4]">
-            Scroll = Zoom • Drag = Pan / Move Node
-          </p>
+      <div className="absolute top-4 left-4 z-20 pointer-events-none max-w-[60%]">
+        <div className="flex items-center gap-2 mb-1.5 bg-white/90 backdrop-blur-sm border border-[#e7e5e4] rounded-md px-2 py-1 w-fit">
+          <span className="w-2 h-2 bg-accent rounded-full animate-pulse" aria-hidden="true"></span>
+          <span className="text-[11px] font-headline uppercase tracking-[0.18em] text-primary font-bold">Story network</span>
         </div>
+        <p className="hidden sm:block text-[11px] text-[#57534e] bg-white/80 px-2 py-1 rounded-md border border-[#e7e5e4] w-fit">
+          Scroll to zoom · drag to pan · click a story to open it
+        </p>
       </div>
+
+      <ul className="absolute bottom-4 left-4 z-20 hidden md:flex flex-wrap gap-x-3 gap-y-1 max-w-[70%] bg-white/85 backdrop-blur-sm border border-[#e7e5e4] rounded-lg px-3 py-2 pointer-events-none" aria-label="Topic colours">
+        {Object.entries(TOPIC_COLORS).map(([topic, color]) => (
+          <li key={topic} className="flex items-center gap-1.5 text-[11px] text-[#44403c]">
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} aria-hidden="true"></span>
+            {topic}
+          </li>
+        ))}
+      </ul>
 
       <div className="absolute top-5 right-5 z-20 flex flex-col items-end gap-2 pointer-events-auto">
         <button
           onClick={() => setShowLabels(!showLabels)}
-          className="px-3 py-1.5 bg-white/90 border border-[#d6d3d1] rounded-md shadow-sm backdrop-blur-md text-[9px] font-headline uppercase tracking-wider text-secondary hover:text-primary hover:border-primary transition-colors flex items-center gap-2"
+          aria-pressed={showLabels}
+          className="px-3 py-1.5 bg-white/90 border border-[#d6d3d1] rounded-md shadow-sm backdrop-blur-md text-[11px] font-headline uppercase tracking-wider text-[#44403c] hover:text-primary hover:border-primary transition-colors flex items-center gap-2"
         >
           <span className={`w-2 h-2 rounded-full ${showLabels ? 'bg-accent' : 'bg-[#d6d3d1]'}`}></span>
           {showLabels ? 'Hide Labels' : 'Show Labels'}
         </button>
-        <div className="px-3 py-1.5 bg-white/90 border border-[#d6d3d1] rounded-md shadow-sm backdrop-blur-md pointer-events-none">
-          <span className="text-[9px] font-headline uppercase tracking-wider text-primary font-bold">
-            {activeNode ? `Focus: ${activeNode.label.slice(0, 20)}...` : "Global Trajectory"}
-          </span>
-        </div>
+        {activeNode && (
+          <div className="hidden sm:block max-w-[260px] px-3 py-1.5 bg-white/90 border border-[#d6d3d1] rounded-md shadow-sm backdrop-blur-md pointer-events-none">
+            <span className="block truncate text-[11px] text-primary font-semibold">{activeNode.label}</span>
+          </div>
+        )}
       </div>
 
       <canvas

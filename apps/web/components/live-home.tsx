@@ -9,7 +9,8 @@ import HorizonSidebar from "./horizon-sidebar-v2";
 import { FriendsPanel } from "./friends-panel";
 import NewsModal, { type NewsModalItem } from "./NewsModal/NewsModal";
 import type { StoryGraph } from "../lib/graph";
-import { getStoryPath } from "../lib/news-routing";
+import { getSourceLabel, getStoryPath } from "../lib/news-routing";
+import { topicColor } from "../lib/topic-colors";
 import { AnimatePresence, motion } from "framer-motion";
 import { useStories } from "../lib/stories-context";
 
@@ -76,6 +77,107 @@ type LikesData = {
   counts: Record<string, number>;
 };
 
+type FeedStory = StoryGraph["stories"][number] & { description?: string };
+
+const PAGE_SIZE = 24;
+
+const relativeTime = (timestamp: string) => {
+  const ms = Date.now() - Date.parse(timestamp);
+  if (!Number.isFinite(ms)) return "";
+  const mins = Math.round(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+};
+
+// Generic preview text ("Cyber update from x.") repeats the chip and source; hide it.
+const usefulSummary = (story: FeedStory) => {
+  const text = story.description?.trim();
+  if (!text || /^\w+ update from /i.test(text) || text === story.title) return null;
+  return text;
+};
+
+function StoryCard({
+  story,
+  reason,
+  isLiked,
+  likeCount,
+  canLike,
+  onLike,
+  onPrefetch,
+}: {
+  story: FeedStory;
+  reason?: string;
+  isLiked: boolean;
+  likeCount: number;
+  canLike: boolean;
+  onLike: () => void;
+  onPrefetch: () => void;
+}) {
+  const summary = usefulSummary(story);
+  const color = topicColor(story.topic);
+  return (
+    <article className="group relative flex h-full flex-col rounded-2xl border border-[#e7e5e4] bg-white p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#d6d3d1] hover:shadow-[0_12px_32px_-12px_rgba(28,25,23,0.25)] focus-within:border-[#ff3e00]">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f5f5f4] px-2.5 py-1 text-[12px] font-semibold text-[#44403c]">
+          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
+          {story.topic}
+        </span>
+        <time dateTime={story.timestamp} className="shrink-0 text-[12px] text-[#78716c]">
+          {relativeTime(story.timestamp)}
+        </time>
+      </div>
+
+      <h3 className="mb-2 text-[17px] font-semibold leading-snug tracking-[-0.01em] text-[#1c1917] [text-wrap:pretty]">
+        {/* Stretched link: the whole card is clickable, the like button stays separate. */}
+        <Link
+          href={getStoryPath(story)}
+          prefetch
+          onMouseEnter={onPrefetch}
+          onFocus={onPrefetch}
+          className="outline-none after:absolute after:inset-0 after:rounded-2xl after:content-[''] group-hover:text-[#c2410c]"
+        >
+          {story.title || "Untitled story"}
+        </Link>
+      </h3>
+
+      {reason && (
+        <p className="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-[#047857]">
+          <span className="material-symbols-outlined text-[16px]" aria-hidden="true">group</span>
+          {reason}
+        </p>
+      )}
+      {summary && <p className="mb-4 line-clamp-3 text-[14px] leading-relaxed text-[#57534e]">{summary}</p>}
+
+      <div className="mt-auto flex items-center justify-between border-t border-[#f5f5f4] pt-4">
+        <span className="truncate text-[13px] font-medium text-[#57534e]">{getSourceLabel(story.sourceIds)}</span>
+        <div className="relative z-10 flex items-center gap-1">
+          {canLike ? (
+            <button
+              type="button"
+              onClick={onLike}
+              aria-pressed={isLiked}
+              aria-label={isLiked ? `Unlike "${story.title}"` : `Like "${story.title}"`}
+              className={`flex h-8 items-center gap-1 rounded-full px-2 transition-colors hover:bg-[#fef2f2] ${isLiked ? "text-[#dc2626]" : "text-[#78716c] hover:text-[#dc2626]"}`}
+            >
+              <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: isLiked ? "'FILL' 1" : "'FILL' 0" }} aria-hidden="true">favorite</span>
+              {likeCount > 0 && <span className="text-[12px] font-semibold tabular-nums">{likeCount}</span>}
+            </button>
+          ) : likeCount > 0 ? (
+            <span className="flex items-center gap-1 px-2 text-[#78716c]" aria-label={`${likeCount} likes`}>
+              <span className="material-symbols-outlined text-[18px]" aria-hidden="true">favorite</span>
+              <span className="text-[12px] font-semibold tabular-nums">{likeCount}</span>
+            </span>
+          ) : null}
+          <span className="material-symbols-outlined text-[20px] text-[#a8a29e] transition-transform group-hover:translate-x-0.5 group-hover:text-[#c2410c]" aria-hidden="true">arrow_forward</span>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 export function LiveHome({ initialData }: { initialData: LivePayload }) {
   const router = useRouter();
   const { data: session } = useSession();
@@ -86,6 +188,9 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
   const [selectedSidebarItem, setSelectedSidebarItem] = useState<NewsModalItem | null>(null);
   const [likesData, setLikesData] = useState<LikesData>({ liked: {}, counts: {} });
   const resizingRef = useRef(false);
+  const [activeTopic, setActiveTopic] = useState<string>("All");
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [shareState, setShareState] = useState<"idle" | "copied" | "failed">("idle");
   const { setStories } = useStories();
   
   useEffect(() => {
@@ -98,11 +203,12 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
       setSidebarWidth(newWidth);
     };
 
+    // Registered once for the component lifetime; mousedown on the resize
+    // handle only flips resizingRef (previously each drag added new listeners).
     const onMouseUp = () => {
+      if (!resizingRef.current) return;
       resizingRef.current = false;
       document.body.style.cursor = "";
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
     };
 
     window.addEventListener("mousemove", onMouseMove);
@@ -206,12 +312,16 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
     return allStories.filter(s => !s.sourceIds.some(id => platformSourceIds.includes(id)));
   }, [allStories, platformSourceIds]);
 
-  const getStorySummary = useCallback((story: StoryGraph["stories"][number]) => {
-    const description = (story as StoryGraph["stories"][number] & { description?: string }).description?.trim();
-    if (description) return description;
-    const sources = story.sourceIds?.length ? story.sourceIds.slice(0, 3).join(", ") : "Global feed";
-    return `${story.title}. Topic: ${story.topic}. Sources: ${sources}.`;
-  }, []);
+  const topicCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const story of mainFeedStories) counts.set(story.topic, (counts.get(story.topic) ?? 0) + 1);
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [mainFeedStories]);
+
+  const filteredStories = useMemo(
+    () => (activeTopic === "All" ? mainFeedStories : mainFeedStories.filter((s) => s.topic === activeTopic)),
+    [mainFeedStories, activeTopic],
+  );
 
   const navigateToStory = useCallback((storyId: string) => {
     const story = data.stories.find((s) => s.id === storyId);
@@ -239,251 +349,201 @@ export function LiveHome({ initialData }: { initialData: LivePayload }) {
     return map;
   }, [socialRecommendations]);
 
-  
+  const shareBrief = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setShareState("copied");
+    } catch {
+      setShareState("failed");
+    }
+    window.setTimeout(() => setShareState("idle"), 2500);
+  }, []);
+
+  const renderCard = (story: FeedStory, reason?: string) => (
+    <StoryCard
+      key={`${reason ? "social-" : ""}${story.id}`}
+      story={story}
+      reason={reason}
+      isLiked={likesData.liked[story.id] ?? false}
+      likeCount={likesData.counts[story.id] ?? 0}
+      canLike={Boolean(session?.user)}
+      onLike={() => handleLike(story.id, story.topic)}
+      onPrefetch={() => prefetchStory(story)}
+    />
+  );
+
+  const updatedLabel = data.meta.fetchedAt ? relativeTime(data.meta.fetchedAt) : null;
 
   return (
-    <div className="min-h-screen text-[#1c1917] font-body bg-[#efefec] transition-colors duration-500">
-      <div className="flex h-[calc(100vh-64px)] overflow-hidden">
-        {/* Main Terminal Workspace (Light/Cream) */}
-        <main className="flex-1 overflow-y-auto custom-scrollbar">
-          <div className="max-w-[1400px] mx-auto px-6 lg:px-12 py-10">
-            <header className="mb-10 flex justify-between items-end">
-              <div>
-                <div className="flex items-center gap-3 mb-4">
-                  <span className="status-dot"></span>
-                  <span className="tag text-[#ff3e00]">Live Nexus</span>
+    <div className="font-body text-[#1c1917]">
+      <div className="flex items-start">
+        <main className="min-w-0 flex-1">
+          <div className="mx-auto max-w-[1400px] px-4 py-8 sm:px-6 md:py-10 lg:px-12">
+            <header className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="status-dot" aria-hidden="true"></span>
+                  <span className="font-headline text-[11px] font-bold uppercase tracking-[0.2em] text-[#c2410c]">Live</span>
+                  {updatedLabel && <span className="text-[12px] text-[#78716c]">· updated {updatedLabel}</span>}
                 </div>
-                <h1 className="font-headline text-5xl font-black text-[#1c1917] tracking-tight leading-none mb-3 uppercase">Intelligence Terminal</h1>
-                <p className="text-sm text-[#57534e] font-medium uppercase tracking-[0.2em]">Semantic relationship mapping across global signal feeds.</p>
+                <h1 className="font-headline text-[34px] font-black uppercase leading-none tracking-tight text-[#1c1917] sm:text-5xl">
+                  Intelligence Terminal
+                </h1>
+                <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-[#57534e]">
+                  {mainFeedStories.length} stories from global sources, grouped by topic and linked by meaning.
+                </p>
               </div>
-              <button onClick={() => refresh(true)} className="px-6 py-3 bg-[#1c1917] text-white font-headline text-[10px] uppercase tracking-widest hover:bg-[#ff3e00] transition-all rounded-lg font-black shadow-lg">
-                {isRefreshing ? "Synchronizing..." : "Sync Matrix"}
+              <button
+                type="button"
+                onClick={() => refresh(true)}
+                disabled={isRefreshing}
+                aria-busy={isRefreshing}
+                className="inline-flex w-fit shrink-0 items-center gap-2 rounded-lg bg-[#1c1917] px-5 py-3 font-headline text-[11px] font-bold uppercase tracking-widest text-white transition-colors hover:bg-[#ff3e00] disabled:cursor-wait disabled:opacity-70"
+              >
+                <span className={`material-symbols-outlined text-[18px] ${isRefreshing ? "animate-spin" : ""}`} aria-hidden="true">refresh</span>
+                {isRefreshing ? "Refreshing…" : "Refresh"}
               </button>
             </header>
 
-            {/* Visualizer Section */}
-            <div className="grid grid-cols-12 gap-6 mb-16">
-               <div className="col-span-12 bg-white border border-[#d6d3d1] rounded-[2rem] p-4 relative h-[500px] shadow-2xl overflow-hidden group">
-                  <div className="absolute top-8 left-10 z-10">
-                    <span className="tag bg-white border-[#d6d3d1] text-[#1c1917] font-headline text-[10px] py-2 px-4 shadow-sm">Relational Graph v2.0</span>
-                  </div>
-                  <div className="w-full h-full opacity-90 group-hover:opacity-100 transition-opacity">
-                    <NewsGraph nodes={data.nodes} edges={data.edges} onNodeClick={(id) => {
-                       navigateToStory(id);
-                    }} />
-                  </div>
-               </div>
-            </div>
+            {/* Story network */}
+            <section aria-label="Story network" className="mb-12 rounded-[1.5rem] border border-[#e7e5e4] bg-white p-2 shadow-[0_24px_48px_-24px_rgba(28,25,23,0.25)] sm:p-3">
+              <div className="h-[340px] w-full sm:h-[440px] lg:h-[500px]">
+                <NewsGraph nodes={data.nodes} edges={data.edges} onNodeClick={(id) => navigateToStory(id)} />
+              </div>
+            </section>
 
-            {/* Friends Also Reading Section (only shown when there are social recs) */}
             {friendRecommendedStories.length > 0 && (
-              <div className="mb-20">
-                <div className="flex items-center justify-between mb-10 pb-4 border-b border-[#d6d3d1]">
-                  <h3 className="font-headline text-[12px] text-[#1c1917] uppercase font-black tracking-[0.3em] flex items-center gap-4">
-                    <span className="w-2 h-2 bg-[#10b981] rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]"></span>
-                    Friends Also Reading
-                  </h3>
-                  <p className="text-[10px] font-headline text-[#a8a29e] uppercase font-bold tracking-widest">
-                    {friendRecommendedStories.length} Social Signals
-                  </p>
+              <section aria-labelledby="friends-heading" className="mb-14">
+                <div className="mb-6 flex items-end justify-between gap-4 border-b border-[#e7e5e4] pb-4">
+                  <h2 id="friends-heading" className="flex items-center gap-3 font-headline text-[13px] font-bold uppercase tracking-[0.2em] text-[#1c1917]">
+                    <span className="h-2 w-2 rounded-full bg-[#10b981]" aria-hidden="true"></span>
+                    From your network
+                  </h2>
+                  <p className="text-[13px] text-[#78716c]">{friendRecommendedStories.length} recommended</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {friendRecommendedStories.slice(0, 6).map((story) => {
-                    const isLiked = likesData.liked[story.id] ?? false;
-                    const likeCount = likesData.counts[story.id] ?? 0;
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  {friendRecommendedStories.slice(0, 6).map((story) =>
+                    renderCard(story as FeedStory, socialReasonMap.get(story.id) ?? "Recommended by your network"),
+                  )}
+                </div>
+              </section>
+            )}
+
+            <section aria-labelledby="feed-heading" className="mb-16">
+              <div className="mb-5 flex items-end justify-between gap-4 border-b border-[#e7e5e4] pb-4">
+                <h2 id="feed-heading" className="flex items-center gap-3 font-headline text-[13px] font-bold uppercase tracking-[0.2em] text-[#1c1917]">
+                  <span className="h-2 w-2 rounded-full bg-[#ff3e00]" aria-hidden="true"></span>
+                  Latest stories
+                </h2>
+                <p className="text-[13px] text-[#78716c]" aria-live="polite">
+                  {activeTopic === "All" ? `${filteredStories.length} stories` : `${filteredStories.length} in ${activeTopic}`}
+                </p>
+              </div>
+
+              {topicCounts.length > 1 && (
+                <div role="group" aria-label="Filter by topic" className="-mx-4 mb-6 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+                  {[["All", mainFeedStories.length] as const, ...topicCounts].map(([topic, count]) => {
+                    const active = activeTopic === topic;
                     return (
-                    <Link
-                      key={`social-${story.id}`}
-                      href={getStoryPath(story)}
-                      prefetch
-                      onMouseEnter={() => prefetchStory(story)}
-                      className="block h-full"
-                    >
-                      <article
-                        className="premium-card h-full rounded-2xl p-6 cursor-pointer group flex flex-col bg-white shadow-sm border border-[#d6d3d1] hover:border-[#10b981] transition-all hover:shadow-xl relative overflow-hidden"
+                      <button
+                        key={topic}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => { setActiveTopic(topic); setVisibleCount(PAGE_SIZE); }}
+                        className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
+                          active ? "border-[#1c1917] bg-[#1c1917] text-white" : "border-[#d6d3d1] bg-white text-[#44403c] hover:border-[#a8a29e]"
+                        }`}
                       >
-                        {/* Social badge */}
-                        <div className="absolute top-0 right-0 bg-gradient-to-bl from-[#10b981] to-[#059669] text-white text-[8px] font-headline font-black uppercase tracking-widest px-4 py-1.5 rounded-bl-xl">
-                          👥 Network
-                        </div>
-                        <div className="flex justify-between items-start mb-5">
-                          <span className="tag bg-[#ecfdf5] border-[#a7f3d0] text-[#047857] text-[9px] font-black uppercase tracking-widest">{story.topic}</span>
-                          <span className="text-[#a8a29e] text-[10px] font-headline font-bold">{new Date(story.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                        </div>
-                        <div className="min-h-0">
-                          <h4 className="font-headline font-bold text-[#1c1917] text-[15px] mb-2 group-hover:text-[#059669] transition-colors leading-tight line-clamp-2 uppercase tracking-tight">
-                            {story.title || "Signal pending classification"}
-                          </h4>
-                          <p className="text-[10px] text-[#10b981] font-headline font-bold mb-3 flex items-center gap-1">
-                            <span>👥</span> {socialReasonMap.get(story.id) ?? "Recommended by your network"}
-                          </p>
-                          <p className="text-[12px] text-[#57534e] line-clamp-2 leading-relaxed font-medium mb-5">
-                            {getStorySummary(story)}
-                          </p>
-                        </div>
-                        <div className="mt-auto pt-5 border-t border-[#ecfdf5] flex justify-between items-center">
-                          <span className="text-[9px] font-headline font-black text-[#a8a29e] uppercase tracking-widest">{story.sourceIds?.[0] || "NETWORK"}</span>
-                          <div className="flex items-center gap-2">
-                            {session?.user && (
-                              <button
-                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleLike(story.id, story.topic); }}
-                                className="flex items-center gap-1 transition-colors"
-                                style={{ color: isLiked ? "#ef4444" : "#a8a29e" }}
-                                aria-label={isLiked ? "Unlike" : "Like"}
-                              >
-                                <span
-                                  className="material-symbols-outlined text-[16px]"
-                                  style={{ fontVariationSettings: isLiked ? "'FILL' 1" : "'FILL' 0" }}
-                                >favorite</span>
-                                {likeCount > 0 && <span className="text-[9px] font-headline font-black">{likeCount}</span>}
-                              </button>
-                            )}
-                            {!session?.user && likeCount > 0 && (
-                              <span className="flex items-center gap-1 text-[#a8a29e]">
-                                <span className="material-symbols-outlined text-[16px]" style={{ fontVariationSettings: "'FILL' 0" }}>favorite</span>
-                                <span className="text-[9px] font-headline font-black">{likeCount}</span>
-                              </span>
-                            )}
-                            <span className="material-symbols-outlined text-[18px] text-[#d6d3d1] group-hover:text-[#10b981] transition-colors">arrow_right_alt</span>
-                          </div>
-                        </div>
-                      </article>
-                    </Link>
+                        {topic !== "All" && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: topicColor(topic) }} aria-hidden="true" />}
+                        {topic}
+                        <span className={`tabular-nums ${active ? "text-white/70" : "text-[#78716c]"}`}>{count}</span>
+                      </button>
                     );
                   })}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Main Signal Grid (INTELLIGENCE POOL) */}
-            <div className="mb-20">
-               <div className="flex items-center justify-between mb-10 pb-4 border-b border-[#d6d3d1]">
-                  <h3 className="font-headline text-[12px] text-[#1c1917] uppercase font-black tracking-[0.3em] flex items-center gap-4">
-                     <span className="w-2 h-2 bg-[#ff3e00] rounded-full shadow-[0_0_10px_rgba(255,62,0,0.5)]"></span>
-                     Global Intelligence Feed
-                  </h3>
-                  <p className="text-[10px] font-headline text-[#a8a29e] uppercase font-bold tracking-widest">{mainFeedStories.length} Global Signals Linked</p>
-               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {mainFeedStories.map((story) => {
-                  const isLiked = likesData.liked[story.id] ?? false;
-                  const likeCount = likesData.counts[story.id] ?? 0;
-                  return (
-                  <Link
-                    key={story.id}
-                    href={getStoryPath(story)}
-                    prefetch
-                    onMouseEnter={() => prefetchStory(story)}
-                    className="block h-full"
-                  >
-                    <article
-                      className="premium-card h-full rounded-2xl p-6 cursor-pointer group flex flex-col bg-white shadow-sm border border-[#d6d3d1] hover:border-[#ff3e00] transition-all hover:shadow-xl"
-                    >
-                       <div className="flex justify-between items-start mb-5">
-                          <span className="tag bg-[#f5f5f4] border-[#d6d3d1] text-[#57534e] text-[9px] font-black uppercase tracking-widest">{story.topic}</span>
-                          <span className="text-[#a8a29e] text-[10px] font-headline font-bold">{new Date(story.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                       </div>
-                    <div className="min-h-0">
-                      <h4 className="font-headline font-bold text-[#1c1917] text-[15px] mb-2 group-hover:text-[#ff3e00] transition-colors leading-tight line-clamp-2 uppercase tracking-tight">
-                        {story.title || "Signal pending classification"}
-                      </h4>
-                      <p className="text-[12px] text-[#57534e] line-clamp-3 leading-relaxed font-medium mb-5">
-                        {getStorySummary(story)}
-                      </p>
+              {filteredStories.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[#d6d3d1] bg-white/60 px-6 py-16 text-center">
+                  <p className="text-[15px] font-medium text-[#1c1917]">No stories yet</p>
+                  <p className="mt-1 text-[14px] text-[#57534e]">Sources are being fetched. Try refreshing in a minute.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+                    {filteredStories.slice(0, visibleCount).map((story) => renderCard(story as FeedStory))}
+                  </div>
+                  {visibleCount < filteredStories.length && (
+                    <div className="mt-10 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+                        className="rounded-lg border border-[#d6d3d1] bg-white px-6 py-3 text-[14px] font-semibold text-[#1c1917] transition-colors hover:border-[#1c1917]"
+                      >
+                        Show more stories
+                        <span className="ml-2 text-[#78716c] tabular-nums">({filteredStories.length - visibleCount} left)</span>
+                      </button>
                     </div>
-                       <div className="mt-auto pt-5 border-t border-[#f5f5f4] flex justify-between items-center">
-                          <span className="text-[9px] font-headline font-black text-[#a8a29e] uppercase tracking-widest">{story.sourceIds?.[0] || "NETWORK"}</span>
-                          <div className="flex items-center gap-2">
-                            {session?.user && (
-                              <button
-                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleLike(story.id, story.topic); }}
-                                className="flex items-center gap-1 transition-colors"
-                                style={{ color: isLiked ? "#ef4444" : "#a8a29e" }}
-                                aria-label={isLiked ? "Unlike" : "Like"}
-                              >
-                                <span
-                                  className="material-symbols-outlined text-[16px]"
-                                  style={{ fontVariationSettings: isLiked ? "'FILL' 1" : "'FILL' 0" }}
-                                >favorite</span>
-                                {likeCount > 0 && <span className="text-[9px] font-headline font-black">{likeCount}</span>}
-                              </button>
-                            )}
-                            {!session?.user && likeCount > 0 && (
-                              <span className="flex items-center gap-1 text-[#a8a29e]">
-                                <span className="material-symbols-outlined text-[16px]" style={{ fontVariationSettings: "'FILL' 0" }}>favorite</span>
-                                <span className="text-[9px] font-headline font-black">{likeCount}</span>
-                              </span>
-                            )}
-                            <span className="material-symbols-outlined text-[18px] text-[#d6d3d1] group-hover:text-[#ff3e00] transition-colors">arrow_right_alt</span>
-                          </div>
-                       </div>
-                    </article>
-                  </Link>
-                  );
-                })}
-               </div>
-            </div>
+                  )}
+                </>
+              )}
+            </section>
           </div>
         </main>
 
-        {/* Intelligence Sidebar (CREAM/LIGHT UI) */}
+        {/* Social & signals panel: desktop only, sticky beside the feed */}
         <AnimatePresence>
-        {isSidebarVisible && (
-          <>
-          <div
-            onMouseDown={() => {
-              resizingRef.current = true;
-              document.body.style.cursor = "col-resize";
-              window.addEventListener("mousemove", (ev) => {
-                if (!resizingRef.current) return;
-                const newWidth = Math.max(280, Math.min(900, window.innerWidth - ev.clientX));
-                setSidebarWidth(newWidth);
-              });
-              window.addEventListener("mouseup", () => {
-                resizingRef.current = false;
-                document.body.style.cursor = "";
-              });
-            }}
-            className="z-50 bg-transparent hover:bg-[#0000000a] cursor-col-resize"
-            style={{ width: 6 }}
-          />
-
-          <motion.aside 
-            initial={{ x: 420 }} animate={{ x: 0 }} exit={{ x: 420 }} transition={{ type: "spring", damping: 30, stiffness: 300 }}
-            className="bg-white border-l border-[#d6d3d1] flex flex-col z-[100] shadow-2xl"
-            style={{ width: sidebarWidth }}
-          >
-            <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#fcfcfc] p-4">
-              <div className="mb-6">
-                <h3 className="font-headline text-[10px] text-[#1c1917] uppercase font-black tracking-[0.2em] mb-4 flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 bg-[#10b981] rounded-full"></span>
-                  Social Intelligence
-                </h3>
-                <FriendsPanel
-                  friendActivity={friendActivity}
-                  onStoryClick={(storyId) => navigateToStory(storyId)}
-                />
-              </div>
-              <div className="border-t border-[#e7e5e4] pt-4">
-                <HorizonSidebar
-                  polymarketItems={polymarketItems}
-                  onNewsClick={(item) => setSelectedSidebarItem(item)}
-                />
-              </div>
-            </div>
-
-            <div className="p-6 bg-white border-t border-[#d6d3d1]">
-              <button className="w-full py-4 bg-[#1c1917] text-white font-headline text-[11px] font-black uppercase tracking-[0.3em] rounded-xl hover:bg-[#ff3e00] transition-all shadow-xl active:scale-[0.98]">Share Intelligence Brief</button>
-            </div>
-          </motion.aside>
-          </>
-        )}
+          {isSidebarVisible && (
+            <>
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize panel"
+                onMouseDown={() => {
+                  resizingRef.current = true;
+                  document.body.style.cursor = "col-resize";
+                }}
+                className="sticky top-16 hidden h-[calc(100vh-4rem)] w-1.5 cursor-col-resize bg-transparent hover:bg-[#0000000a] lg:block"
+              />
+              <motion.aside
+                aria-label="Social and market signals"
+                initial={{ x: 420 }} animate={{ x: 0 }} exit={{ x: 420 }} transition={{ type: "spring", damping: 30, stiffness: 300 }}
+                className="sticky top-16 z-30 hidden h-[calc(100vh-4rem)] flex-col border-l border-[#d6d3d1] bg-white shadow-2xl lg:flex"
+                style={{ width: sidebarWidth }}
+              >
+                <div className="custom-scrollbar flex-1 overflow-y-auto bg-[#fcfcfc] p-4">
+                  <div className="mb-6">
+                    <h2 className="mb-4 flex items-center gap-2 font-headline text-[11px] font-bold uppercase tracking-[0.2em] text-[#1c1917]">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[#10b981]" aria-hidden="true"></span>
+                      Social
+                    </h2>
+                    <FriendsPanel friendActivity={friendActivity} onStoryClick={(storyId) => navigateToStory(storyId)} />
+                  </div>
+                  <div className="border-t border-[#e7e5e4] pt-4">
+                    <HorizonSidebar polymarketItems={polymarketItems} onNewsClick={(item) => setSelectedSidebarItem(item)} />
+                  </div>
+                </div>
+                <div className="border-t border-[#d6d3d1] bg-white p-4">
+                  <button
+                    type="button"
+                    onClick={shareBrief}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1c1917] py-3.5 font-headline text-[11px] font-bold uppercase tracking-[0.2em] text-white transition-colors hover:bg-[#ff3e00]"
+                  >
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden="true">{shareState === "copied" ? "check" : "link"}</span>
+                    <span aria-live="polite">
+                      {shareState === "copied" ? "Link copied" : shareState === "failed" ? "Copy failed" : "Copy link to this feed"}
+                    </span>
+                  </button>
+                </div>
+              </motion.aside>
+            </>
+          )}
         </AnimatePresence>
       </div>
 
-      <NewsModal 
-        item={selectedSidebarItem} 
-        onClose={() => setSelectedSidebarItem(null)} 
+      <NewsModal
+        item={selectedSidebarItem}
+        onClose={() => setSelectedSidebarItem(null)}
       />
     </div>
   );

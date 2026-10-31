@@ -36,3 +36,10 @@
   - **onnxruntime-node needs glibc**: the Alpine Docker image could not load it, so the Dockerfile moved to Debian slim. Docker Hub rate limits (429) and the sandbox TLS proxy needed a sandbox-only CA injection to build here; not a repo issue.
   - **Scripts hang on exit when REDIS_URL is set** (the ioredis handle keeps the event loop alive). Resolved with an explicit process.exit in eval/cleanup/train scripts.
   - Open: Google News publisherUrl = homepage; background ingestion re-triggers and stores placeholders when all sources fail; buildFriendRecommendations runs twice per request; 4 pre-existing TS errors with ignoreBuildErrors=true.
+- 2026-10-31 (UI audit):
+  - **Home feed invisible**: `h-[calc(100vh-64px)] overflow-hidden` wrapping an inner `overflow-y-auto` hid 160 cards behind a nested scroller, with the footer stacked below. Resolved with normal page flow and a sticky sidebar.
+  - **No mobile navigation**: nav links, search and sign-in were all `hidden` below md/lg with no menu. Resolved with a hamburger menu.
+  - **Listener leak**: the sidebar resize mousedown added new window listeners on every drag. Resolved.
+  - **Raw error text** ("fetch failed") shown on article pages. Replaced with a neutral notice.
+  - **Low contrast**: #a8a29e meta text on white (2.5:1) and text-white/15–40 on insights (2–3.8:1). Raised.
+  - Note: the "impeccable" design skill requested by the user is not installed in this environment; the UI pass followed equivalent audit → fix → verify steps manually.

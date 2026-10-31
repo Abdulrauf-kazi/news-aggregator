@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { TOPIC_COLORS as SHARED_TOPIC_COLORS } from "../../lib/topic-colors";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { SOURCE_DEFINITIONS, TOPICS } from "../../lib/sources";
@@ -33,16 +34,7 @@ type Tooltip = { x: number; y: number; label: string; value: string };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const TOPIC_COLORS: Record<string, string> = {
-  AI: "#6366f1",
-  Macro: "#f59e0b",
-  Energy: "#10b981",
-  Geopolitics: "#ef4444",
-  Cyber: "#8b5cf6",
-  Climate: "#22c55e",
-  Defense: "#3b82f6",
-  Logistics: "#f97316",
-};
+const TOPIC_COLORS: Record<string, string> = SHARED_TOPIC_COLORS;
 
 const CATEGORY_COLORS: Record<string, string> = {
   news: "#ff3e00",
@@ -298,7 +290,7 @@ function RadarChart({
         </text>
       </svg>
 
-      <div className="absolute top-3 left-3 text-[8px] font-mono text-white/20 uppercase tracking-[0.3em]">
+      <div className="absolute top-3 left-3 text-[8px] font-mono text-white/60 uppercase tracking-[0.3em]">
         Topic distribution · normalized · click to filter
       </div>
     </div>
@@ -325,7 +317,7 @@ function BarChart({
 
   return (
     <div className="w-full h-full overflow-y-auto pr-2 flex flex-col gap-3 py-2">
-      <p className="text-[8px] font-mono text-white/20 uppercase tracking-[0.3em] mb-1">
+      <p className="text-[8px] font-mono text-white/60 uppercase tracking-[0.3em] mb-1">
         Source influence ranking · stories contributed
       </p>
       {sorted.map(([srcId, count], i) => {
@@ -349,11 +341,11 @@ function BarChart({
             onMouseLeave={() => setTooltip(null)}
           >
             <div className="flex items-center gap-3 mb-1">
-              <span className="text-[8px] font-mono text-white/30 w-4 text-right flex-shrink-0">{i + 1}</span>
+              <span className="text-[8px] font-mono text-white/60 w-4 text-right flex-shrink-0">{i + 1}</span>
               <span className="text-[10px] font-mono text-white/70 group-hover:text-white transition-colors truncate flex-1">
                 {label}
               </span>
-              <span className="text-[9px] font-mono text-white/40 flex-shrink-0">{count}</span>
+              <span className="text-[9px] font-mono text-white/65 flex-shrink-0">{count}</span>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-4 flex-shrink-0" />
@@ -406,7 +398,7 @@ function DonutChart({
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-center gap-6">
-      <p className="text-[8px] font-mono text-white/20 uppercase tracking-[0.3em]">
+      <p className="text-[8px] font-mono text-white/60 uppercase tracking-[0.3em]">
         Source category breakdown
       </p>
       <div className="relative">
@@ -469,8 +461,8 @@ function DonutChart({
               className="w-2 h-2 rounded-full flex-shrink-0"
               style={{ background: CATEGORY_COLORS[cat] ?? "#666" }}
             />
-            <span className="text-[9px] font-mono text-white/50 uppercase">{cat}</span>
-            <span className="text-[9px] font-mono text-white/30 ml-auto">{(fraction * 100).toFixed(0)}%</span>
+            <span className="text-[9px] font-mono text-white/70 uppercase">{cat}</span>
+            <span className="text-[9px] font-mono text-white/60 ml-auto">{(fraction * 100).toFixed(0)}%</span>
           </div>
         ))}
       </div>
@@ -510,7 +502,7 @@ function ScatterPlot({
 
   return (
     <div className="w-full h-full flex flex-col">
-      <p className="text-[8px] font-mono text-white/20 uppercase tracking-[0.3em] mb-3">
+      <p className="text-[8px] font-mono text-white/60 uppercase tracking-[0.3em] mb-3">
         Signal strength vs recency · {pts.length} data points · hover for title
       </p>
       <div className="flex-1 flex items-center justify-center">
@@ -598,7 +590,7 @@ function ScatterPlot({
         {TOPICS.map((t) => (
           <div key={t} className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full" style={{ background: TOPIC_COLORS[t] ?? "#fff" }} />
-            <span className="text-[8px] font-mono text-white/40 uppercase">{t}</span>
+            <span className="text-[8px] font-mono text-white/65 uppercase">{t}</span>
           </div>
         ))}
       </div>
@@ -635,14 +627,14 @@ function HeatmapChart({
 
   return (
     <div className="w-full h-full flex flex-col gap-4">
-      <p className="text-[8px] font-mono text-white/20 uppercase tracking-[0.3em]">
+      <p className="text-[8px] font-mono text-white/60 uppercase tracking-[0.3em]">
         Topic activity by hour · last 24h · brighter = more signals
       </p>
 
       {/* Hour labels */}
       <div className="flex gap-[3px] pl-[88px]">
         {hours.map((h) => (
-          <div key={h} className="flex-1 text-center text-[6px] font-mono text-white/15">
+          <div key={h} className="flex-1 text-center text-[6px] font-mono text-white/60">
             {h === 0 ? "now" : h % 6 === 0 ? `${h}h` : ""}
           </div>
         ))}
@@ -695,7 +687,7 @@ function HeatmapChart({
 
       {/* Overall hourly bar */}
       <div className="mt-4">
-        <p className="text-[7px] font-mono text-white/15 uppercase tracking-widest mb-1 pl-[88px]">All topics combined</p>
+        <p className="text-[7px] font-mono text-white/60 uppercase tracking-widest mb-1 pl-[88px]">All topics combined</p>
         <div className="flex items-end gap-[3px] pl-[88px]" style={{ height: 40 }}>
           {hours.map((h) => {
             const count = analytics.hourlyActivity[h] ?? 0;
@@ -764,7 +756,7 @@ export default function InsightsPage() {
       <div className="min-h-screen flex items-center justify-center bg-[#1c1917]">
         <div className="flex flex-col items-center gap-4">
           <div className="w-8 h-8 border-2 border-white/10 border-t-[#ff3e00] rounded-full animate-spin" />
-          <p className="font-mono text-[10px] text-white/30 uppercase tracking-[0.3em]">Rendering analytics…</p>
+          <p className="font-mono text-[10px] text-white/60 uppercase tracking-[0.3em]">Rendering analytics…</p>
         </div>
       </div>
     );
@@ -785,7 +777,7 @@ export default function InsightsPage() {
         >
           <div className="bg-[#0d0d0b] border border-white/10 rounded-xl px-3 py-2 shadow-2xl max-w-[280px]">
             <p className="text-[10px] font-mono font-bold text-white/80 mb-0.5">{tooltip.label}</p>
-            <p className="text-[9px] font-mono text-white/40">{tooltip.value}</p>
+            <p className="text-[9px] font-mono text-white/65">{tooltip.value}</p>
           </div>
         </div>
       )}
@@ -801,7 +793,7 @@ export default function InsightsPage() {
             <h1 className="font-headline text-5xl font-black text-white tracking-tight leading-none mb-3 uppercase">
               Intelligence<br />Observatory
             </h1>
-            <p className="text-[11px] text-white/30 max-w-lg font-mono uppercase tracking-[0.12em] leading-relaxed">
+            <p className="text-[11px] text-white/60 max-w-lg font-mono uppercase tracking-[0.12em] leading-relaxed">
               Real-time multi-dimensional analysis of global news vectors, source topology, and temporal signal patterns.
             </p>
           </div>
@@ -810,7 +802,7 @@ export default function InsightsPage() {
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="flex items-center gap-2 px-5 py-3 bg-white/5 border border-white/10 rounded-xl font-mono text-[10px] font-bold uppercase tracking-widest text-white/50 hover:text-white hover:border-white/20 transition-all disabled:opacity-40"
+              className="flex items-center gap-2 px-5 py-3 bg-white/5 border border-white/10 rounded-xl font-mono text-[10px] font-bold uppercase tracking-widest text-white/70 hover:text-white hover:border-white/20 transition-all disabled:opacity-40"
             >
               <span className={`material-symbols-outlined text-[16px] ${refreshing ? "animate-spin" : ""}`}>refresh</span>
               {refreshing ? "Syncing…" : "Sync Data"}
@@ -855,7 +847,7 @@ export default function InsightsPage() {
               <p className="text-4xl font-black font-headline tracking-tight" style={{ color: kpi.color }}>
                 <AnimatedCounter value={kpi.value} decimals={kpi.decimals ?? 0} />
               </p>
-              <p className="text-[9px] font-mono text-white/30 uppercase tracking-widest mt-1">{kpi.label}</p>
+              <p className="text-[9px] font-mono text-white/60 uppercase tracking-widest mt-1">{kpi.label}</p>
             </motion.div>
           ))}
         </div>
@@ -951,7 +943,7 @@ export default function InsightsPage() {
             {/* Topic Breakdown */}
             <div className="bg-white/5 border border-white/8 rounded-2xl p-6">
               <div className="flex items-center justify-between mb-5">
-                <h3 className="font-mono text-[10px] font-black text-white/40 uppercase tracking-[0.3em]">Topic Breakdown</h3>
+                <h3 className="font-mono text-[10px] font-black text-white/65 uppercase tracking-[0.3em]">Topic Breakdown</h3>
                 {selectedTopic && (
                   <button
                     onClick={() => setSelectedTopic(null)}
@@ -981,7 +973,7 @@ export default function InsightsPage() {
                         <span className="text-[10px] font-mono text-white/70 group-hover:text-white transition-colors flex-1">
                           {topic}
                         </span>
-                        <span className="text-[9px] font-mono text-white/30">{count}</span>
+                        <span className="text-[9px] font-mono text-white/60">{count}</span>
                       </div>
                       <div className="ml-4 h-[3px] bg-white/5 rounded-full overflow-hidden">
                         <motion.div
@@ -993,7 +985,7 @@ export default function InsightsPage() {
                         />
                       </div>
                       <div className="ml-4 mt-1 flex items-center gap-2">
-                        <span className="text-[8px] font-mono text-white/20">
+                        <span className="text-[8px] font-mono text-white/60">
                           avg {(analytics.topicAvgScores[topic] ?? 0).toFixed(0)} score
                         </span>
                       </div>
@@ -1005,7 +997,7 @@ export default function InsightsPage() {
 
             {/* Top Sources */}
             <div className="bg-white/5 border border-white/8 rounded-2xl p-6 flex-1">
-              <h3 className="font-mono text-[10px] font-black text-white/40 uppercase tracking-[0.3em] mb-5">
+              <h3 className="font-mono text-[10px] font-black text-white/65 uppercase tracking-[0.3em] mb-5">
                 Top Sources
               </h3>
               <div className="flex flex-col gap-2">
@@ -1024,16 +1016,16 @@ export default function InsightsPage() {
                         transition={{ delay: i * 0.05 }}
                         className="flex items-center gap-3 py-2 border-b border-white/5 last:border-0"
                       >
-                        <span className="text-[7px] font-mono text-white/20 w-4">{i + 1}</span>
+                        <span className="text-[7px] font-mono text-white/60 w-4">{i + 1}</span>
                         <div
                           className="w-1.5 h-6 rounded-full flex-shrink-0"
                           style={{ background: color }}
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-[10px] font-mono text-white/70 truncate">{label}</p>
-                          <p className="text-[8px] font-mono text-white/25 capitalize">{cat}</p>
+                          <p className="text-[8px] font-mono text-white/60 capitalize">{cat}</p>
                         </div>
-                        <span className="text-[10px] font-mono font-bold text-white/40 flex-shrink-0">{count}</span>
+                        <span className="text-[10px] font-mono font-bold text-white/65 flex-shrink-0">{count}</span>
                       </motion.div>
                     );
                   })}
@@ -1045,17 +1037,17 @@ export default function InsightsPage() {
         {/* Footer */}
         <footer className="mt-10 pt-6 border-t border-white/5 flex justify-between items-center">
           <div className="flex gap-6">
-            <Link href="/" className="font-mono text-[8px] font-bold text-white/20 hover:text-[#ff3e00] transition-colors uppercase tracking-widest">
+            <Link href="/" className="font-mono text-[8px] font-bold text-white/60 hover:text-[#ff3e00] transition-colors uppercase tracking-widest">
               Live Feed
             </Link>
-            <Link href="/news-graph" className="font-mono text-[8px] font-bold text-white/20 hover:text-[#ff3e00] transition-colors uppercase tracking-widest">
+            <Link href="/news-graph" className="font-mono text-[8px] font-bold text-white/60 hover:text-[#ff3e00] transition-colors uppercase tracking-widest">
               Network Graph
             </Link>
-            <Link href="/sources" className="font-mono text-[8px] font-bold text-white/20 hover:text-[#ff3e00] transition-colors uppercase tracking-widest">
+            <Link href="/sources" className="font-mono text-[8px] font-bold text-white/60 hover:text-[#ff3e00] transition-colors uppercase tracking-widest">
               Source Catalog
             </Link>
           </div>
-          <div className="font-mono text-[8px] text-white/15 uppercase tracking-widest">
+          <div className="font-mono text-[8px] text-white/60 uppercase tracking-widest">
             Signal Observatory · v1.0
           </div>
         </footer>

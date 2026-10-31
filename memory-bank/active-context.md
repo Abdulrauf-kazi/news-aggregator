@@ -4,6 +4,13 @@
 - 2026-10-31 (session 2): Get the project ready for a deep-learning final evaluation: local neural inference, a trained topic head, an evaluation harness, a cleanup script, a full-app test, security fixes and docs. User-facing to-do list: `SETUP_TODO.md`. Insights and roadmap: `docs/MODEL_REPORT.md`.
 
 ## Recent Changes
+- **UI upgrade (2026-10-31, PR #1)**:
+  - Home: the feed was trapped in a fixed-height inner scroll box, so it looked empty. It now uses normal page scroll with a sticky desktop sidebar, new story cards (sentence-case titles, topic colour chips, relative time, real source names), topic filters, and "Show more" pagination (24 per page).
+  - Mobile: the navbar previously hid all navigation and sign-in below 768px. It now has a hamburger menu and a search button.
+  - Shared topic palette (`lib/topic-colors.ts`) used by the graph legend, cards and insights.
+  - Article page: no raw "fetch failed" text, readable headline, clean fallback summary.
+  - Insights contrast raised to at least 7:1. Skip link, focus-visible ring and reduced-motion support added. Footer copy rewritten; page title fixed.
+  - Bug fixes: resize-handle listener leak; the dead "Share Intelligence Brief" button now copies the feed link.
 - **Session 2 (2026-10-31)**:
   - In-process MiniLM provider (transformers.js) and embedding-space tagging (`embeddingModel`).
   - Trained MLP topic head: 90.6% test accuracy, 89.4% ± 1.2 over 6 seeds, vs 86.3% zero-shot and 25.6% legacy.

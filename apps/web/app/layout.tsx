@@ -6,8 +6,9 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "The Galactic Editor | Intelligence Pulse",
-  description: "Precision editorial for the digital age.",
+  title: "News Monitor | Real-time news intelligence",
+  description:
+    "Real-time news from 45 global sources, classified, de-duplicated and linked by semantic similarity.",
 };
 
 export default function RootLayout({
@@ -35,8 +36,9 @@ export default function RootLayout({
       </head>
       <body className="bg-surface font-body text-primary min-h-screen flex flex-col">
         <Providers>
+          <a href="#main-content" className="skip-link">Skip to content</a>
           <Navbar />
-          <div className="flex-grow pt-16">{children}</div>
+          <div id="main-content" className="flex-grow pt-16">{children}</div>
           <Footer />
         </Providers>
       </body>

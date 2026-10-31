@@ -41,7 +41,7 @@ function ArticleSkeleton() {
     <div className="py-10">
       <div className="mb-8 flex items-center gap-4">
         <div className="h-10 w-10 animate-spin rounded-full border-[3px] border-[#ff3e00] border-t-transparent" />
-        <p className="font-headline text-[11px] font-black uppercase tracking-[0.28em] text-[#a8a29e]">
+        <p className="font-headline text-[11px] font-bold uppercase tracking-[0.28em] text-[#78716c]" role="status">
           Loading article
         </p>
       </div>
@@ -58,17 +58,15 @@ function ArticleSkeleton() {
 const buildStoryFallback = (story: StoryNode) => {
   const sourceLabel = getSourceLabel(story.sourceIds);
   const sourceList = story.sourceIds
-    .filter((sourceId) => sourceId !== sourceLabel)
+    .map((sourceId) => getSourceLabel([sourceId]))
+    .filter((label, index, all) => label !== sourceLabel && all.indexOf(label) === index)
     .slice(0, 3)
     .join(", ");
 
   return [
-    `${story.title} is part of the current ${story.topic.toLowerCase()} feed from ${sourceLabel}.`,
-    sourceList
-      ? `This signal is grouped with corroborating coverage from ${sourceList}.`
-      : `Additional corroboration is still being collected for this signal.`,
-    `The article source did not expose a directly fetchable story body, so this page is showing the best available summary while preserving navigation and related coverage.`,
-  ].join(" ");
+    `${story.title}. Reported in the ${story.topic} feed by ${sourceLabel}.`,
+    sourceList ? `Also covered by ${sourceList}.` : "",
+  ].filter(Boolean).join(" ");
 };
 
 export default function ArticleClient({
@@ -205,24 +203,24 @@ export default function ArticleClient({
       <article className="mx-auto max-w-[920px] px-5 py-10 md:px-8 md:py-14">
         <Link
           href="/news"
-          className="mb-10 inline-flex items-center gap-2 rounded-lg border border-[#d6d3d1] bg-white px-4 py-2 font-headline text-[10px] font-black uppercase tracking-widest text-[#57534e] transition-all hover:border-[#ff3e00] hover:text-[#ff3e00]"
+          className="mb-10 inline-flex items-center gap-2 rounded-lg border border-[#d6d3d1] bg-white px-4 py-2 font-headline text-[11px] font-bold uppercase tracking-widest text-[#57534e] transition-colors hover:border-[#ff3e00] hover:text-[#c2410c]"
         >
-          <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-          Feed
+          <span className="material-symbols-outlined text-[16px]" aria-hidden="true">arrow_back</span>
+          Back to feed
         </Link>
 
         <div className="mb-5 flex flex-wrap items-center gap-3">
-          <span className="rounded-full border border-[#ff3e00]/20 bg-[#fff5f2] px-3 py-1 font-headline text-[9px] font-black uppercase tracking-widest text-[#ff3e00]">
+          <span className="rounded-full border border-[#ff3e00]/25 bg-[#fff5f2] px-3 py-1 font-headline text-[11px] font-bold uppercase tracking-widest text-[#c2410c]">
             {story.topic}
           </span>
-          <span className="font-body text-[12px] font-medium text-[#78716c]">{articleSource}</span>
-          {articleDate && <span className="font-body text-[12px] text-[#78716c]">{articleDate}</span>}
+          <span className="font-body text-[13px] font-semibold text-[#44403c]">{articleSource}</span>
+          {articleDate && <span className="font-body text-[13px] text-[#78716c]">· {articleDate}</span>}
           {article?.readingTime ? (
-            <span className="font-body text-[12px] text-[#78716c]">{article.readingTime} min read</span>
+            <span className="font-body text-[13px] text-[#78716c]">· {article.readingTime} min read</span>
           ) : null}
         </div>
 
-        <h1 className="mb-6 font-headline text-[34px] font-black uppercase leading-[1.08] tracking-tight text-[#1c1917] md:text-[52px]">
+        <h1 className="mb-6 font-body text-[32px] font-bold leading-[1.12] tracking-[-0.02em] text-[#1c1917] [text-wrap:balance] md:text-[46px]">
           {articleTitle}
         </h1>
 
@@ -241,8 +239,14 @@ export default function ArticleClient({
         {isLoading && <ArticleSkeleton />}
 
         {showError && (
-          <div className="mb-8 rounded-xl border border-[#fecaca] bg-[#fef2f2] px-5 py-4 text-[13px] font-medium text-[#b91c1c]">
-            {error}
+          // Technical errors (e.g. "fetch failed") are not shown to readers; the
+          // summary below is always available, so explain the fallback calmly.
+          <div
+            role="status"
+            className="mb-8 flex items-start gap-3 rounded-xl border border-[#e7e5e4] bg-white px-5 py-4 text-[14px] leading-relaxed text-[#57534e]"
+          >
+            <span className="material-symbols-outlined mt-0.5 text-[18px] text-[#78716c]" aria-hidden="true">info</span>
+            <span>The full article couldn&apos;t be loaded from the publisher, so we&apos;re showing a summary. Use <strong className="font-semibold text-[#1c1917]">Original source</strong> to read it there.</span>
           </div>
         )}
 
@@ -250,7 +254,7 @@ export default function ArticleClient({
           <div className="article-body">
             {sanitizedHtml ? (
               <div
-                className="text-[17px] leading-[1.85] text-[#292524] [&_a]:text-[#ff3e00] [&_a]:underline [&_blockquote]:my-6 [&_blockquote]:border-l-4 [&_blockquote]:border-[#ff3e00] [&_blockquote]:pl-5 [&_figure]:my-8 [&_figcaption]:mt-2 [&_figcaption]:text-center [&_figcaption]:text-sm [&_figcaption]:text-[#a8a29e] [&_h2]:mb-4 [&_h2]:mt-10 [&_h2]:font-headline [&_h2]:text-[24px] [&_h2]:font-black [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:font-headline [&_h3]:text-[20px] [&_h3]:font-bold [&_img]:my-8 [&_img]:max-w-full [&_img]:rounded-xl [&_li]:mb-2 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-5 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-6"
+                className="text-[17px] leading-[1.85] text-[#292524] [&_a]:text-[#ff3e00] [&_a]:underline [&_blockquote]:my-6 [&_blockquote]:border-l-4 [&_blockquote]:border-[#ff3e00] [&_blockquote]:pl-5 [&_figure]:my-8 [&_figcaption]:mt-2 [&_figcaption]:text-center [&_figcaption]:text-sm [&_figcaption]:text-[#78716c] [&_h2]:mb-4 [&_h2]:mt-10 [&_h2]:font-headline [&_h2]:text-[24px] [&_h2]:font-black [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:font-headline [&_h3]:text-[20px] [&_h3]:font-bold [&_img]:my-8 [&_img]:max-w-full [&_img]:rounded-xl [&_li]:mb-2 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-5 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-6"
                 dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
               />
             ) : article?.text ? (
@@ -315,15 +319,15 @@ export default function ArticleClient({
                   key={related.id}
                   href={getStoryPath(related)}
                   prefetch
-                  className="premium-card rounded-xl bg-white p-5 transition-all hover:border-[#ff3e00]"
+                  className="premium-card rounded-xl bg-white p-5 transition-all hover:-translate-y-0.5 hover:border-[#ff3e00] hover:shadow-lg"
                 >
-                  <span className="font-headline text-[9px] font-black uppercase tracking-widest text-[#ff3e00]">
+                  <span className="font-headline text-[11px] font-bold uppercase tracking-widest text-[#c2410c]">
                     {related.topic}
                   </span>
-                  <h3 className="mt-2 line-clamp-3 font-headline text-[14px] font-bold uppercase leading-tight text-[#1c1917]">
+                  <h3 className="mt-2 line-clamp-3 font-body text-[16px] font-semibold leading-snug text-[#1c1917]">
                     {related.title}
                   </h3>
-                  <p className="mt-4 font-body text-[11px] font-medium text-[#78716c]">
+                  <p className="mt-4 font-body text-[12px] font-medium text-[#78716c]">
                     {formatDate(related.timestamp) || related.sourceIds?.[0]}
                   </p>
                 </Link>

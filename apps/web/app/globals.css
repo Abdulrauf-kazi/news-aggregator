@@ -332,3 +332,51 @@ body {
   padding: 48px 24px;
   text-align: center;
 }
+
+/* ── UI foundations (accessibility + legibility) ───────────────────────────
+   Text colours on the light surface: ink #1c1917 (16:1), body #44403c (10:1),
+   muted #57534e (7:1), subtle #78716c (4.6:1, the minimum for meta text).
+   #a8a29e (2.5:1) is decorative only and must not carry information. */
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: #ffedd5;
+  color: #1c1917;
+}
+
+:where(a, button, [role="button"], input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #ff3e00;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: -48px;
+  z-index: 100;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #1c1917;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
