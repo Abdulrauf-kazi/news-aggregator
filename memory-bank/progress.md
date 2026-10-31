@@ -13,3 +13,4 @@
 - 2026-05-17: Reduced stale placeholder dominance by detecting synthetic stories, preventing unrelated fallback-story merges, sanitizing stale DB feed payloads, and extending force-refresh live build time.
 - 2026-05-17: Added GitHub events API and X (Twitter) trending RSS to `/api/horizon` route. Sidebar now shows tabs for All, Polymarket, HackerNews, Reddit, GitHub, Telegram, and X with live counts and platform-specific icons.
 - 2026-05-17: Fixed horizon route TypeScript errors for null filtering and undefined payload access in GitHub event parsing.
+- 2026-10-31: Completed full codebase review of the ingestion → embed → dedupe → graph → rank → recommend pipeline in preparation for model improvements.
