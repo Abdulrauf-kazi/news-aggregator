@@ -14,3 +14,4 @@
 - 2026-05-17: Added GitHub events API and X (Twitter) trending RSS to `/api/horizon` route. Sidebar now shows tabs for All, Polymarket, HackerNews, Reddit, GitHub, Telegram, and X with live counts and platform-specific icons.
 - 2026-05-17: Fixed horizon route TypeScript errors for null filtering and undefined payload access in GitHub event parsing.
 - 2026-10-31: Completed full codebase review of the ingestion → embed → dedupe → graph → rank → recommend pipeline in preparation for model improvements.
+- 2026-10-31: Model-quality pass: HF router embedding endpoint with batching and a failure cooldown, no caching of fallback vectors, missing cheerio import fixed (RSS ingestion), word-boundary topic classifier, real base signal score, fabricated source attribution removed, recency no longer double-counted, normalized personalization blend, log-damped CF with unlike reversal, set-based vector index reuse, hybrid search with a similarity cutoff.

@@ -22,3 +22,9 @@
   - `enrichStoryRelations` adds same-topic stories' sourceIds to each story, which inflates `sharedSource` edge weights and can trip the `isSyntheticStory` (>2 sources + root URL) heuristic.
   - Session topic/story weights never decay within a session, and CF interaction weights grow without limit via `$inc`.
   - `/api/search` merges cosine similarity and keyword relevance on different scales, and there is no minimum-similarity cutoff, so semantic search always returns top-K even when nothing is relevant.
+- 2026-10-31: **Resolved**: all items in the model-quality entry above are fixed (see active-context "Recent Changes"). Additional root causes found and fixed:
+  - **Missing `cheerio` import** in `source-adapters.ts` (`extractXmlSourceUrls`). This was a ReferenceError inside try/catch, so every RSS and Google News source silently returned `[]` and fell through to placeholder stories. It was likely the main cause of the "placeholder dominance" logged on 2026-05-17.
+  - **Fabricated attribution**: adapters hard-coded unrelated extra sourceIds (e.g. Finnhub to yahoo-finance+fred, GitHub to hacker-news+c2intelfeeds). This inflated source counts, made `sharedSource` edges near-universal, and mis-filtered platform stories on the homepage.
+  - **Vector index thrash**: `ensureVectorStore` compared ID order, and ranking reshuffles stories on every request, so it rebuilt the index and wrote about 2MB to Redis per request. Search also alternated the index between 1000 and 280 stories.
+  - **Like inflation**: like, unlike, like added +10 weight each time; unlike never reversed it.
+  - Not fixed (pending live test): Google News `<source url>` (publisher homepage) is used as the story URL.

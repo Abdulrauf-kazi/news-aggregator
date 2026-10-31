@@ -1,3 +1,4 @@
+import * as cheerio from "cheerio";
 import Parser from "rss-parser";
 import {
   createStoryGraphFromRecommendations,
@@ -12,8 +13,9 @@ import {
   type SourceIngestionMetric,
 } from "./story-db";
 import { addEmbeddingsToStories } from "./embeddings";
-import { SOURCE_DEFINITIONS, TOPICS, type SourceDefinition } from "./sources";
+import { SOURCE_DEFINITIONS, type SourceDefinition } from "./sources";
 import { isSyntheticStory } from "./story-quality";
+import { classifyTopic } from "./topic-classifier";
 import { buildStoryRecommendations } from "./vector-store";
 
 const REQUEST_TIMEOUT_MS = 8000;
@@ -23,31 +25,12 @@ const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const FRED_API_KEY = process.env.FRED_API_KEY;
 const EIA_API_KEY = process.env.EIA_API_KEY;
 
-const topicKeywords: Record<string, string[]> = {
-  Macro: ["inflation", "fed", "rate", "yield", "economy"],
-  Energy: ["energy", "oil", "gas", "power", "grid"],
-  Cyber: ["cyber", "malware", "hack", "threat", "security"],
-  Geopolitics: ["conflict", "war", "sanction", "border", "military"],
-  Climate: ["climate", "storm", "flood", "wildfire", "weather"],
-  Defense: ["defense", "airspace", "navy", "aircraft", "weapon"],
-  AI: ["ai", "model", "machine learning", "automation", "neural"],
-  Logistics: ["shipping", "port", "supply chain", "aviation", "cargo"],
-};
-
-const scoreFromText = (text: string, weight = 1) => {
-  const base = text.length + weight * 13;
-  return 48 + (base % 48);
-};
-
-const toTopic = (text: string) => {
-  const lower = text.toLowerCase();
-  for (const [topic, words] of Object.entries(topicKeywords)) {
-    if (words.some((word) => lower.includes(word))) {
-      return topic;
-    }
-  }
-  const idx = Math.abs(text.length) % TOPICS.length;
-  return TOPICS[idx] as string;
+// Base signal score in [50, 100]: strength of topical evidence plus whether the
+// item carries a real summary. Cross-source coverage is added in mergeStories.
+const baseSignalScore = (topicStrength: number, content?: string) => {
+  const topical = Math.min(24, topicStrength * 6);
+  const hasSummary = (content?.length ?? 0) >= 80 ? 8 : 0;
+  return Math.min(100, 50 + topical + hasSummary);
 };
 
 const cleanText = (value: string) =>
@@ -149,14 +132,21 @@ const createStory = (
 ): StoryNode => {
   const normalizedTitle = cleanText(title || `Signal from ${sourceId}`);
   const cleanedContent = content ? cleanText(content) : undefined;
-  
+  const storyContent =
+    cleanedContent && cleanedContent !== normalizedTitle ? cleanedContent : undefined;
+  const { topic, strength } = classifyTopic({
+    title: normalizedTitle,
+    content: storyContent,
+    sourceId,
+  });
+
   return {
     id: `story:${sourceId}:${externalId}`,
     title: normalizedTitle,
-    content: cleanedContent && cleanedContent !== normalizedTitle ? cleanedContent : undefined,
-    topic: toTopic(normalizedTitle),
-    score: scoreFromText(normalizedTitle, extraSourceIds.length + 1),
-    sourceIds: [sourceId, ...extraSourceIds],
+    content: storyContent,
+    topic,
+    score: baseSignalScore(strength, storyContent),
+    sourceIds: Array.from(new Set([sourceId, ...extraSourceIds])),
     timestamp: timestamp ?? new Date().toISOString(),
     url,
     publisherUrl,
@@ -212,7 +202,7 @@ const fetchRssStories = async (
           item.guid || item.link || `${idx}`,
           title,
           item.isoDate || item.pubDate,
-          ["rss2json"],
+          [],
           content && content !== title ? content : undefined,
           url,
           publisherUrl
@@ -247,7 +237,7 @@ const fetchGoogleNewsRssStories = async (
           item.guid || item.link || `gn-${idx}`,
           title,
           item.isoDate || item.pubDate,
-          ["google-news", "rss-atom"],
+          [],
           content && content !== title ? content : undefined,
           url,
           publisherUrl
@@ -273,7 +263,7 @@ const fetchRss2JsonStories = async (
         item.guid ?? `${idx}`,
         item.title ?? "RSS2JSON item",
         item.pubDate ? new Date(item.pubDate).toISOString() : undefined,
-        ["rss-atom"],
+        [],
         item.description || item.content,
         item.link,
         item.link
@@ -300,7 +290,7 @@ const fetchGdeltStories = async (
         article.url ?? `${idx}`,
         article.title ?? "GDELT event",
         toIsoTimestamp(article.seendate),
-        ["rss-atom"],
+        [],
         undefined,
         article.url,
         article.url
@@ -341,7 +331,7 @@ const fetchFinnhubStories = async (
         `${item.id ?? idx}`,
         item.headline ?? "Finnhub market update",
         toIsoTimestamp(item.datetime),
-        ["yahoo-finance", "fred"],
+        [],
         item.summary || item.url,
         item.url,
         item.url
@@ -371,7 +361,7 @@ const fetchFredStories = async (
         release.id ?? `${idx}`,
         `FRED Release: ${release.name}`,
         release.realtime_start,
-        ["finnhub", "yahoo-finance"],
+        [],
         undefined,
         release.link || `https://fred.stlouisfed.org/release?rid=${release.id}`,
         release.link || `https://fred.stlouisfed.org/release?rid=${release.id}`
@@ -403,7 +393,7 @@ const fetchEiaStories = async (
         `${item.period}-${idx}`,
         `EIA Energy Metric: ${item.region ?? "Global"} power output`,
         item.period,
-        ["fred", "finnhub"],
+        [],
         undefined,
         source.endpoint,
         source.endpoint
@@ -434,7 +424,7 @@ const fetchHackerNewsStories = async (
         `${topIds[idx]}`,
         item.title ?? `Hacker News ${topIds[idx]}`,
         item.time ? new Date(item.time * 1000).toISOString() : undefined,
-        ["github"],
+        [],
         undefined,
         item.url || `https://news.ycombinator.com/item?id=${topIds[idx]}`,
         item.url || `https://news.ycombinator.com/item?id=${topIds[idx]}`
@@ -459,13 +449,13 @@ const fetchGithubStories = async (
 
   return events
     .slice(0, STORIES_PER_SOURCE)
-    .map((event, idx) =>
+    .map((event) =>
       createStory(
         source.id,
         event.id,
         `${event.type} on ${event.repo?.name ?? "unknown/repo"}`,
         event.created_at,
-        idx % 2 === 0 ? ["hacker-news", "c2intelfeeds"] : ["hacker-news"],
+        [],
         undefined,
         event.repo?.name ? `https://github.com/${event.repo.name}` : undefined,
         event.repo?.name ? `https://github.com/${event.repo.name}` : undefined
@@ -489,7 +479,7 @@ const fetchArxivStories = async (
         url || "arxiv",
         cleanText(match[2] ?? "arXiv paper"),
         new Date(match[3] ?? Date.now()).toISOString(),
-        ["hacker-news"],
+        [],
         undefined,
         url,
         url
@@ -517,7 +507,7 @@ const fetchCoinGeckoStories = async (
         coin.item?.id ?? `${idx}`,
         `${coin.item?.name ?? "Asset"} trending in crypto markets`,
         new Date().toISOString(),
-        ["yahoo-finance", "finnhub"],
+        [],
         undefined,
         coin.item?.id ? `https://www.coingecko.com/en/coins/${coin.item.id}` : undefined,
         coin.item?.id ? `https://www.coingecko.com/en/coins/${coin.item.id}` : undefined
@@ -545,7 +535,7 @@ const fetchUsgsStories = async (
         item.properties?.time
           ? new Date(item.properties.time).toISOString()
           : undefined,
-        ["nasa-eonet", "nws"],
+        [],
         undefined,
         item.properties?.url,
         item.properties?.url
@@ -573,7 +563,7 @@ const fetchNasaEonetStories = async (
         event.id ?? `${idx}`,
         event.title ?? "NASA EONET event",
         event.geometry?.[0]?.date,
-        ["usgs", "nws"],
+        [],
         undefined,
         event.sources?.[0]?.url,
         event.sources?.[0]?.url
@@ -601,7 +591,7 @@ const fetchNwsStories = async (
         alert.id ?? `${idx}`,
         alert.properties?.event ?? "NWS active alert",
         alert.properties?.effective,
-        ["usgs", "nasa-eonet"],
+        [],
         alert.properties?.description,
         alert.id,
         alert.id
@@ -699,7 +689,8 @@ const fallbackForSource = (source: SourceDefinition): StoryNode[] => {
     ],
   };
 
-  const contentPool = sourceFallbackContent[source.id] || sourceFallbackContent.default;
+  const contentPool =
+    sourceFallbackContent[source.id] ?? sourceFallbackContent.default ?? [];
 
   let fallbackUrl: string | undefined;
   try {
@@ -710,14 +701,14 @@ const fallbackForSource = (source: SourceDefinition): StoryNode[] => {
   }
 
   return Array.from({ length: 2 }).map((_, idx) => {
-    const content = contentPool[idx % contentPool.length];
-    const title = content.split(".")[0];
+    const content = contentPool[idx % contentPool.length] ?? "";
+    const title = content.split(".")[0] ?? content;
     return createStory(
       source.id,
       `fallback-${idx}`,
       title,
       new Date(Date.now() - idx * 300000).toISOString(),
-      ["rss-atom"],
+      [],
       content,
       fallbackUrl,
     );
@@ -794,9 +785,12 @@ const mergeStories = (left: StoryNode, right: StoryNode): StoryNode => {
       ? left.content
       : right.content;
 
+  // Independent coverage is the real trend signal: each additional source adds 5.
+  const addedSources =
+    mergedSourceIds.length - Math.max(left.sourceIds.length, right.sourceIds.length);
   const mergedScore = Math.min(
     100,
-    Math.round((left.score + right.score) / 2 + mergedSourceIds.length * 1.5),
+    Math.round(Math.max(left.score, right.score) + 5 * Math.max(0, addedSources)),
   );
 
   return {
@@ -820,6 +814,16 @@ const canMergeStories = (left: StoryNode, right: StoryNode) => {
 
   if (isSyntheticStory(left) || isSyntheticStory(right)) {
     return left.sourceIds.some((sourceId) => right.sourceIds.includes(sourceId));
+  }
+
+  // A single feed does not publish the same story twice: near-identical items from
+  // one source (successive USGS quakes, GitHub events, NWS alerts) are distinct events.
+  if (
+    left.sourceIds.length === 1 &&
+    right.sourceIds.length === 1 &&
+    left.sourceIds[0] === right.sourceIds[0]
+  ) {
+    return false;
   }
 
   if (GOOGLE_NEWS_LINK_PATTERN.test(left.url ?? "") || GOOGLE_NEWS_LINK_PATTERN.test(right.url ?? "")) {
@@ -867,36 +871,6 @@ const canonicalizeStories = (stories: StoryNode[]): StoryNode[] => {
   }
 
   return canonical;
-};
-
-const enrichStoryRelations = (stories: StoryNode[]): StoryNode[] => {
-  const byTopic = new Map<string, StoryNode[]>();
-  for (const story of stories) {
-    const items = byTopic.get(story.topic) ?? [];
-    items.push(story);
-    byTopic.set(story.topic, items);
-  }
-
-  return stories.map((story) => {
-    const related = (byTopic.get(story.topic) ?? [])
-      .filter((candidate) => candidate.id !== story.id)
-      .slice(0, 4)
-      .flatMap((candidate) => candidate.sourceIds)
-      .filter((sourceId, idx, all) => all.indexOf(sourceId) === idx)
-      .slice(0, 3);
-
-    const mergedSourceIds = [...story.sourceIds];
-    for (const sourceId of related) {
-      if (!mergedSourceIds.includes(sourceId)) {
-        mergedSourceIds.push(sourceId);
-      }
-    }
-
-    return {
-      ...story,
-      sourceIds: mergedSourceIds,
-    };
-  });
 };
 
 const adapters: Partial<
@@ -1051,7 +1025,7 @@ export const buildLiveGraph = async (): Promise<StoryGraph> => {
   const fetchedStories = results.flatMap((result) => result.stories);
   const storiesWithEmbeddings = await addEmbeddingsToStories(fetchedStories);
   const canonicalStories = canonicalizeStories(storiesWithEmbeddings);
-  const relationReadyStories = enrichStoryRelations(canonicalStories);
+  const relationReadyStories = canonicalStories;
   const metrics = results.map((result) => result.metric);
 
   await storeSourceMetrics(metrics);

@@ -136,11 +136,14 @@ export async function ensureVectorStore(stories: StoryNode[]) {
   const validStories = stories.filter(
     (story) => Array.isArray(story.embedding) && story.embedding.length > 0,
   );
-  const nextIds = validStories.map((story) => story.id);
-  const sameLength = nextIds.length === state.storyIds.length;
-  const sameOrder =
-    sameLength && nextIds.every((id, index) => state.storyIds[index] === id);
-  if (sameOrder && state.storyIds.length > 0) {
+  // Compare as a set: ranking reorders stories on every request (exploration
+  // shuffle), and an order check forced a full rebuild + Redis write each time.
+  // Vectors are stored aligned with state.storyIds, so order is irrelevant.
+  const currentIds = new Set(state.storyIds);
+  const sameSet =
+    validStories.length === state.storyIds.length &&
+    validStories.every((story) => currentIds.has(story.id));
+  if (sameSet && state.storyIds.length > 0) {
     return {
       backend: state.backend,
       vectorCount: state.storyIds.length,

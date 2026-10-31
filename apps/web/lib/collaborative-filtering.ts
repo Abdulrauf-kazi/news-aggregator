@@ -1,5 +1,6 @@
 import type { StoryNode } from "./graph";
 import {
+  LIKE_INTERACTION_WEIGHT,
   getFollowingIds,
   getMultipleUsersReadingHistory,
   getUserReadingHistory,
@@ -28,6 +29,8 @@ export type FriendActivity = {
 };
 
 // ── Core ALS-Style Collaborative Filtering ───────────────────────────────────
+
+const dampWeight = (weight: number) => Math.log1p(Math.max(0, weight));
 
 /**
  * Computes Jaccard similarity between two users based on their reading history.
@@ -127,7 +130,8 @@ export async function buildFriendRecommendations(input: {
         likedByFriendNames: [],
       };
 
-      existing.score += effectiveSimilarity * interaction.weight * likeBoost;
+      // log-damped implicit rating: weights grow without bound via $inc
+      existing.score += effectiveSimilarity * dampWeight(interaction.weight) * likeBoost;
 
       if (!existing.friendIds.includes(friendId)) {
         existing.friendIds.push(friendId);
@@ -155,7 +159,7 @@ export async function buildFriendRecommendations(input: {
       if (candidateScores.has(storyId)) continue; // already scored via interactions
 
       candidateScores.set(storyId, {
-        score: effectiveSimilarity * 10 * 1.5,
+        score: effectiveSimilarity * dampWeight(LIKE_INTERACTION_WEIGHT) * 1.5,
         friendIds: [friendId],
         friendNames: [friendName],
         likedByFriendIds: [friendId],

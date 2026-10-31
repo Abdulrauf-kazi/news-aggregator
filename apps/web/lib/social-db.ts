@@ -315,13 +315,18 @@ export async function getUserTopicInterests(userId: string): Promise<Record<stri
   const topicWeights: Record<string, number> = {};
   for (const interaction of interactions) {
     if (interaction.topic) {
-      topicWeights[interaction.topic] = (topicWeights[interaction.topic] || 0) + interaction.weight;
+      // log-damped so one heavily re-read story cannot define the whole profile
+      topicWeights[interaction.topic] =
+        (topicWeights[interaction.topic] || 0) + Math.log1p(Math.max(0, interaction.weight));
     }
   }
   return topicWeights;
 }
 
 // ── Likes ────────────────────────────────────────────────────────────────────
+
+// High interaction weight for likes (used by recommendation logic)
+export const LIKE_INTERACTION_WEIGHT = 10;
 
 export async function toggleLike(
   userId: string,
@@ -335,6 +340,11 @@ export async function toggleLike(
 
   if (existing) {
     await collection.deleteOne({ userId, storyId });
+    // Undo the like's interaction weight so like/unlike cycles cannot inflate it.
+    await db.collection<UserInteraction>("user_interactions").updateOne(
+      { userId, storyId },
+      [{ $set: { weight: { $max: [0, { $subtract: ["$weight", LIKE_INTERACTION_WEIGHT] }] } } }],
+    );
     return { liked: false };
   } else {
     await collection.insertOne({
@@ -348,7 +358,7 @@ export async function toggleLike(
       userId,
       storyId,
       topic,
-      weight: 10, // High weight for likes
+      weight: LIKE_INTERACTION_WEIGHT,
     });
     return { liked: true };
   }
