@@ -1,4 +1,9 @@
 import { SOURCE_DEFINITIONS, TOPICS, type SourceCategory } from "./sources";
+import { predictTopicWithHead, type TopicHeadWeights } from "./topic-head";
+import topicHeadJson from "./models/topic-head.json";
+
+/** Trained MLP head (eval/train-topic-head.ts); used when it matches the story's embedding space. */
+export const TOPIC_HEAD = topicHeadJson as unknown as TopicHeadWeights;
 
 type Topic = (typeof TOPICS)[number];
 
@@ -131,4 +136,140 @@ export function classifyTopic(input: {
     topic: tagTopic ?? (source ? CATEGORY_TOPICS[source.category] : TOPICS[0]),
     strength: 0,
   };
+}
+
+// ── Neural (zero-shot) topic classification ─────────────────────────────────
+// Each topic is represented by the mean embedding of a few short descriptions.
+// A story is assigned to the prototype with the highest cosine similarity.
+// The descriptions are deliberately generic and independent of eval data.
+
+const TOPIC_PROTOTYPES: Record<Topic, string[]> = {
+  Macro: [
+    "Economy and financial markets: inflation, central bank interest rate decisions, GDP growth and recession.",
+    "Stock market, bond yields, currencies, employment data, trade tariffs and corporate earnings.",
+  ],
+  Energy: [
+    "Energy markets: oil and natural gas prices, OPEC production, refineries and fuel supply.",
+    "Electricity grids, power plants, nuclear, solar and wind energy, batteries and renewables.",
+  ],
+  Cyber: [
+    "Cybersecurity incidents: hackers, ransomware, malware, data breaches and stolen personal data.",
+    "Software vulnerabilities exploited by attackers, phishing campaigns, spyware and online fraud.",
+  ],
+  Geopolitics: [
+    "International politics and diplomacy: governments, elections, presidents and prime ministers.",
+    "Sanctions, peace talks, protests, refugees, territorial disputes and United Nations resolutions.",
+  ],
+  Climate: [
+    "Natural disasters and extreme weather: hurricanes, floods, wildfires, heatwaves and droughts.",
+    "Earthquakes, volcanic eruptions, global warming, emissions and climate science.",
+  ],
+  Defense: [
+    "Military and defence: armed forces, troops, navy, air force and weapons procurement.",
+    "Missile launches, drone strikes, air defence, arms contracts and military exercises.",
+  ],
+  AI: [
+    "Artificial intelligence: machine learning models, chatbots, large language models and generative AI.",
+    "AI companies, GPU chips for data centers, robotics, self-driving cars and AI regulation.",
+  ],
+  Logistics: [
+    "Transport and logistics: container shipping, ports, freight rates and supply chains.",
+    "Airlines and airports, flight disruptions, rail freight, trucking, canals and parcel delivery.",
+  ],
+};
+
+let prototypePromise: Promise<{
+  model: string;
+  centroids: Array<{ topic: Topic; vector: number[] }>;
+} | null> | null = null;
+
+const meanUnit = (vectors: number[][]) => {
+  const dims = vectors[0]?.length ?? 0;
+  const mean = new Array<number>(dims).fill(0);
+  for (const vector of vectors) {
+    for (let i = 0; i < dims; i += 1) mean[i] = (mean[i] ?? 0) + (vector[i] ?? 0);
+  }
+  const norm = Math.sqrt(mean.reduce((sum, v) => sum + v * v, 0)) || 1;
+  return mean.map((v) => v / norm);
+};
+
+const dot = (left: number[], right: number[]) => {
+  let sum = 0;
+  const len = Math.min(left.length, right.length);
+  for (let i = 0; i < len; i += 1) sum += (left[i] ?? 0) * (right[i] ?? 0);
+  return sum;
+};
+
+/** Embeds the topic prototypes once per process. Returns null when no neural model is available. */
+export const getTopicPrototypes = () => {
+  prototypePromise ??= (async () => {
+    const { embedTexts } = await import("./embeddings");
+    const topics = Object.keys(TOPIC_PROTOTYPES) as Topic[];
+    const texts = topics.flatMap((topic) => TOPIC_PROTOTYPES[topic]);
+    const results = await embedTexts(texts);
+    if (!results.every((result) => result.fromModel)) {
+      prototypePromise = null; // retry later, e.g. once the provider recovers
+      return null;
+    }
+    let offset = 0;
+    const centroids = topics.map((topic) => {
+      const count = TOPIC_PROTOTYPES[topic].length;
+      const vectors = results.slice(offset, offset + count).map((r) => r.embedding);
+      offset += count;
+      return { topic, vector: meanUnit(vectors) };
+    });
+    return { model: results[0]!.model, centroids };
+  })();
+  return prototypePromise;
+};
+
+export type NeuralTopicPrediction = { topic: Topic; similarity: number; margin: number };
+
+export function classifyTopicByEmbedding(
+  embedding: number[],
+  centroids: Array<{ topic: Topic; vector: number[] }>,
+): NeuralTopicPrediction {
+  const scored = centroids
+    .map(({ topic, vector }) => ({ topic, similarity: dot(embedding, vector) }))
+    .sort((a, b) => b.similarity - a.similarity);
+  const best = scored[0]!;
+  return {
+    topic: best.topic,
+    similarity: best.similarity,
+    margin: best.similarity - (scored[1]?.similarity ?? 0),
+  };
+}
+
+/**
+ * Neural topic assignment used at ingestion, in order of preference:
+ *   1. trained MLP head (89.4% mean test accuracy over 6 seeds) for every story
+ *      embedded in the head's space; on eval it beats keyword overrides;
+ *   2. otherwise zero-shot prototypes, but only where keyword evidence is weak
+ *      (strength < HYBRID_MIN_KEYWORD_STRENGTH), which is the best zero-shot hybrid;
+ *   3. otherwise the keyword/source topic is kept (e.g. lexical fallback vectors).
+ * See eval/RESULTS.md and eval/TRAINING.md.
+ */
+export const HYBRID_MIN_KEYWORD_STRENGTH = 2;
+
+export async function refineTopicsWithEmbeddings<
+  T extends { title: string; content?: string; topic: string; embedding?: number[]; embeddingModel?: string },
+>(stories: T[], keywordStrength: (story: T) => number): Promise<T[]> {
+  const needsPrototypes = stories.some(
+    (story) => story.embedding?.length && story.embeddingModel !== TOPIC_HEAD.embeddingModel,
+  );
+  const prototypes = needsPrototypes ? await getTopicPrototypes() : null;
+  return stories.map((story) => {
+    if (!story.embedding?.length) return story;
+    if (story.embeddingModel === TOPIC_HEAD.embeddingModel) {
+      return { ...story, topic: predictTopicWithHead(TOPIC_HEAD, story.embedding).topic };
+    }
+    if (
+      prototypes &&
+      story.embeddingModel === prototypes.model &&
+      keywordStrength(story) < HYBRID_MIN_KEYWORD_STRENGTH
+    ) {
+      return { ...story, topic: classifyTopicByEmbedding(story.embedding, prototypes.centroids).topic };
+    }
+    return story;
+  });
 }

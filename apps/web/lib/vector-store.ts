@@ -14,6 +14,8 @@ type FaissIndexInstance = {
 type VectorStoreState = {
   backend: "faiss" | "cosine";
   storyIds: string[];
+  /** Embedding space per indexed story (aligned with storyIds). */
+  models: Array<string | undefined>;
   vectors: number[][];
   faissIndex: FaissIndexInstance | null;
 };
@@ -21,6 +23,7 @@ type VectorStoreState = {
 const state: VectorStoreState = {
   backend: "cosine",
   storyIds: [],
+  models: [],
   vectors: [],
   faissIndex: null,
 };
@@ -88,6 +91,7 @@ export async function refreshVectorStore(stories: StoryNode[]) {
   );
 
   state.storyIds = ids;
+  state.models = indexedStories.map((story) => story.embeddingModel);
   state.vectors = vectors;
   state.faissIndex = null;
   state.backend = "cosine";
@@ -196,16 +200,20 @@ export async function queryTopKSimilarStories(input: {
 
     return labels
       .map((label, idx) => ({
-        storyId: state.storyIds[label] ?? "",
+        storyId:
+          state.models[label] === state.models[storyIndex]
+            ? (state.storyIds[label] ?? "")
+            : "",
         similarity: Number(distances[idx] ?? 0),
       }))
       .filter((item) => item.storyId && item.storyId !== input.storyId)
       .slice(0, effectiveTopK);
   }
 
+  const queryModel = state.models[storyIndex];
   return state.storyIds
     .map((candidateId, index) => {
-      if (candidateId === input.storyId) {
+      if (candidateId === input.storyId || state.models[index] !== queryModel) {
         return null;
       }
       const candidateVector = state.vectors[index] ?? [];
@@ -230,6 +238,8 @@ export function queryByEmbeddingVector(input: {
   embedding: number[];
   topK: number;
   excludeStoryIds?: string[];
+  /** Only compare against stories embedded in this space. */
+  model?: string;
 }): Array<{ storyId: string; similarity: number }> {
   const queryVector = normalizeVector(input.embedding);
   if (queryVector.length === 0 || state.storyIds.length === 0) {
@@ -264,6 +274,7 @@ export function queryByEmbeddingVector(input: {
   return state.storyIds
     .map((candidateId, index) => {
       if (excludeSet.has(candidateId)) return null;
+      if (input.model && state.models[index] !== input.model) return null;
       const candidateVector = state.vectors[index] ?? [];
       const similarity = cosineSimilarity(queryVector, candidateVector);
       return { storyId: candidateId, similarity };

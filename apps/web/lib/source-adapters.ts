@@ -12,10 +12,11 @@ import {
   storeSourceMetrics,
   type SourceIngestionMetric,
 } from "./story-db";
-import { addEmbeddingsToStories } from "./embeddings";
+import { addEmbeddingsToStories, LEXICAL_EMBEDDING_SPACE } from "./embeddings";
 import { SOURCE_DEFINITIONS, type SourceDefinition } from "./sources";
-import { isSyntheticStory } from "./story-quality";
-import { classifyTopic } from "./topic-classifier";
+import { baseSignalScore, isSyntheticStory } from "./story-quality";
+import { classifyTopic, refineTopicsWithEmbeddings } from "./topic-classifier";
+import { isNearDuplicate } from "./dedupe";
 import { buildStoryRecommendations } from "./vector-store";
 
 const REQUEST_TIMEOUT_MS = 8000;
@@ -24,14 +25,6 @@ const VECTOR_SEARCH_TOP_K = Number(process.env.VECTOR_SEARCH_TOP_K ?? 5);
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const FRED_API_KEY = process.env.FRED_API_KEY;
 const EIA_API_KEY = process.env.EIA_API_KEY;
-
-// Base signal score in [50, 100]: strength of topical evidence plus whether the
-// item carries a real summary. Cross-source coverage is added in mergeStories.
-const baseSignalScore = (topicStrength: number, content?: string) => {
-  const topical = Math.min(24, topicStrength * 6);
-  const hasSummary = (content?.length ?? 0) >= 80 ? 8 : 0;
-  return Math.min(100, 50 + topical + hasSummary);
-};
 
 const cleanText = (value: string) =>
   value
@@ -715,7 +708,6 @@ const fallbackForSource = (source: SourceDefinition): StoryNode[] => {
   });
 };
 
-const DEDUPE_SIMILARITY_THRESHOLD = 0.9;
 
 const cosineSimilarity = (left: number[], right: number[]) => {
   const size = Math.min(left.length, right.length);
@@ -854,11 +846,21 @@ const canonicalizeStories = (stories: StoryNode[]): StoryNode[] => {
       if (!candidateEmbedding?.length) {
         continue;
       }
+      if (candidate.embeddingModel !== story.embeddingModel) {
+        continue; // vectors from different embedding spaces are not comparable
+      }
       if (!canMergeStories(candidate, story)) {
         continue;
       }
       const similarity = cosineSimilarity(embedding, candidateEmbedding);
-      if (similarity > DEDUPE_SIMILARITY_THRESHOLD) {
+      if (
+        isNearDuplicate({
+          similarity,
+          leftTitle: candidate.title,
+          rightTitle: story.title,
+          lexical: story.embeddingModel === LEXICAL_EMBEDDING_SPACE,
+        })
+      ) {
         canonical[i] = mergeStories(candidate, story);
         merged = true;
         break;
@@ -1024,7 +1026,13 @@ export const buildLiveGraph = async (): Promise<StoryGraph> => {
 
   const fetchedStories = results.flatMap((result) => result.stories);
   const storiesWithEmbeddings = await addEmbeddingsToStories(fetchedStories);
-  const canonicalStories = canonicalizeStories(storiesWithEmbeddings);
+  // Neural zero-shot topic for stories whose keyword evidence is weak
+  // (88% vs 54% accuracy on eval/benchmark.json).
+  const topicRefinedStories = await refineTopicsWithEmbeddings(
+    storiesWithEmbeddings,
+    (story) => classifyTopic({ title: story.title, content: story.content }).strength,
+  );
+  const canonicalStories = canonicalizeStories(topicRefinedStories);
   const relationReadyStories = canonicalStories;
   const metrics = results.map((result) => result.metric);
 

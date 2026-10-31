@@ -9,6 +9,8 @@ export type StoryNode = {
   sourceIds: string[];
   timestamp: string;
   embedding?: number[];
+  /** Embedding space of `embedding`; vectors from different spaces are not comparable. */
+  embeddingModel?: string;
   url?: string;
   publisherUrl?: string;
 };
@@ -63,6 +65,11 @@ const cosineSimilarity = (left: number[], right: number[]) => {
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
+export const sameEmbeddingSpace = (
+  left: Pick<StoryNode, "embeddingModel">,
+  right: Pick<StoryNode, "embeddingModel">,
+) => left.embeddingModel === right.embeddingModel;
+
 const hasSharedSource = (left: StoryNode, right: StoryNode) =>
   left.sourceIds.some((sourceId) => right.sourceIds.includes(sourceId));
 
@@ -97,7 +104,7 @@ export const createStoryGraphFromStories = (
     for (let j = i + 1; j < stories.length; j += 1) {
       const right = stories[j] as StoryNode;
       const semanticSimilarity =
-        left.embedding && right.embedding
+        left.embedding && right.embedding && sameEmbeddingSpace(left, right)
           ? cosineSimilarity(left.embedding, right.embedding)
           : 0;
       const sharesTopic = left.topic === right.topic;
@@ -248,7 +255,7 @@ export const createStoryGraph = (seed: number = Date.now()): StoryGraph => {
     for (let j = i + 1; j < stories.length; j += 1) {
       const right = stories[j] as StoryNode;
       const semanticSimilarity =
-        left.embedding && right.embedding
+        left.embedding && right.embedding && sameEmbeddingSpace(left, right)
           ? cosineSimilarity(left.embedding, right.embedding)
           : 0;
       const sharesTopic = left.topic === right.topic;

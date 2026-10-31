@@ -2,13 +2,42 @@ import { createHash } from "node:crypto";
 import type { StoryNode } from "./graph";
 import { getJsonValue, setJsonValue } from "./redis";
 
+// Provider selection: "auto" (default) uses the Hugging Face API when a key is set,
+// otherwise runs the model in-process with transformers.js (ONNX Runtime).
+// "lexical" disables neural embeddings entirely.
+type EmbeddingProvider = "hf-api" | "local" | "lexical";
+const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
+const EMBEDDING_PROVIDER: EmbeddingProvider = (() => {
+  const configured = (process.env.EMBEDDING_PROVIDER ?? "auto").toLowerCase();
+  if (configured === "hf-api" || configured === "local" || configured === "lexical") {
+    return configured;
+  }
+  return HUGGINGFACE_API_KEY ? "hf-api" : "local";
+})();
+
 const EMBEDDING_MODEL =
   process.env.EMBEDDING_MODEL ?? "sentence-transformers/all-MiniLM-L6-v2";
+// transformers.js-compatible ONNX export of the same weights.
+const EMBEDDING_LOCAL_MODEL =
+  process.env.EMBEDDING_LOCAL_MODEL ?? "Xenova/all-MiniLM-L6-v2";
+// Optional directory containing <EMBEDDING_LOCAL_MODEL>/{config,tokenizer}.json + onnx/model.onnx.
+// When set, the model is loaded offline from disk; otherwise it is downloaded once from the HF hub.
+const EMBEDDING_LOCAL_MODEL_PATH = process.env.EMBEDDING_LOCAL_MODEL_PATH;
 // The legacy `api-inference.huggingface.co/pipeline/feature-extraction/*` endpoint
 // was retired by Hugging Face; serverless inference now goes through the router.
 const EMBEDDING_API_URL =
   process.env.EMBEDDING_API_URL ??
   `https://router.huggingface.co/hf-inference/models/${EMBEDDING_MODEL}/pipeline/feature-extraction`;
+
+/** Name of the embedding space; vectors are only comparable within one space. */
+export const LEXICAL_EMBEDDING_SPACE = "lexical-hash-v2";
+const spaceOf = (modelId: string) => modelId.split("/").pop() ?? modelId;
+export const MODEL_EMBEDDING_SPACE =
+  EMBEDDING_PROVIDER === "local"
+    ? spaceOf(EMBEDDING_LOCAL_MODEL)
+    : EMBEDDING_PROVIDER === "hf-api"
+      ? spaceOf(EMBEDDING_MODEL)
+      : LEXICAL_EMBEDDING_SPACE;
 const EMBEDDING_DIM = Number(process.env.EMBEDDING_DIM ?? 384);
 const EMBEDDING_CACHE_TTL_SECONDS = Number(
   process.env.EMBEDDING_CACHE_TTL_SECONDS ?? 60 * 60 * 24 * 7,
@@ -25,8 +54,6 @@ const EMBEDDING_MAX_CHARS = 1500;
 // After a provider failure, skip remote calls for a while instead of letting every
 // remaining batch time out individually.
 const PROVIDER_FAILURE_COOLDOWN_MS = 60_000;
-const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
-
 let providerDisabledUntil = 0;
 let warnedMissingKey = false;
 let observedModelDim: number | null = null;
@@ -35,13 +62,20 @@ export type EmbeddingResult = {
   embedding: number[];
   /** true when the vector came from the sentence-transformer model, false for the lexical hash fallback. */
   fromModel: boolean;
+  /** Embedding space the vector belongs to (MODEL_EMBEDDING_SPACE or LEXICAL_EMBEDDING_SPACE). */
+  model: string;
 };
 
-// Model name is part of the key so switching EMBEDDING_MODEL never serves stale
-// vectors from a different embedding space. Only model vectors are cached.
+export const embeddingProviderInfo = () => ({
+  provider: EMBEDDING_PROVIDER,
+  space: MODEL_EMBEDDING_SPACE,
+});
+
+// The embedding space is part of the key so switching models never serves stale
+// vectors from a different space. Only model vectors are cached.
 const cacheKey = (text: string) => {
   const hash = createHash("sha1").update(text).digest("hex");
-  return `embedding:v2:${EMBEDDING_MODEL}:${hash}`;
+  return `embedding:v2:${MODEL_EMBEDDING_SPACE}:${hash}`;
 };
 
 const normalizeVector = (vector: number[]) => {
@@ -95,6 +129,10 @@ const deterministicEmbedding = (text: string, dims: number) => {
   }
   return normalizeVector(values);
 };
+
+/** Lexical hash embedding (exposed for evaluation / baselines). */
+export const lexicalEmbedding = (text: string) =>
+  deterministicEmbedding(prepareText(text), fallbackDims());
 
 const isNumberArray = (value: unknown): value is number[] =>
   Array.isArray(value) && value.length > 0 && typeof value[0] === "number";
@@ -154,12 +192,55 @@ const fetchModelEmbeddings = async (texts: string[]): Promise<number[][]> => {
   }
 };
 
+type FeatureExtractor = (
+  texts: string[],
+  options: { pooling: "mean"; normalize: boolean },
+) => Promise<{ tolist: () => number[][] }>;
+
+let localExtractorPromise: Promise<FeatureExtractor> | null = null;
+
+const loadLocalExtractor = () => {
+  localExtractorPromise ??= (async () => {
+    const { pipeline, env } = await import("@huggingface/transformers");
+    if (EMBEDDING_LOCAL_MODEL_PATH) {
+      env.localModelPath = EMBEDDING_LOCAL_MODEL_PATH;
+      env.allowRemoteModels = false;
+    }
+    const extractor = await pipeline("feature-extraction", EMBEDDING_LOCAL_MODEL, {
+      dtype: "fp32",
+    });
+    return extractor as unknown as FeatureExtractor;
+  })().catch((error) => {
+    localExtractorPromise = null;
+    throw error;
+  });
+  return localExtractorPromise;
+};
+
+const fetchLocalEmbeddings = async (texts: string[]): Promise<number[][]> => {
+  const extractor = await loadLocalExtractor();
+  const output = await extractor(texts, { pooling: "mean", normalize: true });
+  const vectors = output.tolist();
+  if (vectors.length !== texts.length) {
+    throw new Error("Local embedding output shape invalid");
+  }
+  return vectors.map((vector) => normalizeVector(vector.map(Number)));
+};
+
+const computeModelEmbeddings = (texts: string[]) =>
+  EMBEDDING_PROVIDER === "local"
+    ? fetchLocalEmbeddings(texts)
+    : fetchModelEmbeddings(texts);
+
 const canUseProvider = () => {
-  if (!HUGGINGFACE_API_KEY) {
+  if (EMBEDDING_PROVIDER === "lexical") {
+    return false;
+  }
+  if (EMBEDDING_PROVIDER === "hf-api" && !HUGGINGFACE_API_KEY) {
     if (!warnedMissingKey) {
       warnedMissingKey = true;
       console.warn(
-        "HUGGINGFACE_API_KEY is not set; using lexical fallback embeddings.",
+        "EMBEDDING_PROVIDER=hf-api but HUGGINGFACE_API_KEY is not set; using lexical fallback embeddings.",
       );
     }
     return false;
@@ -193,6 +274,8 @@ export async function embedTexts(
   texts: string[],
   concurrency = 4,
 ): Promise<EmbeddingResult[]> {
+  // In-process inference is CPU-bound; parallel batches only add contention.
+  const effectiveConcurrency = EMBEDDING_PROVIDER === "local" ? 1 : concurrency;
   const prepared = texts.map(prepareText);
   const results: Array<EmbeddingResult | undefined> = new Array(texts.length);
 
@@ -208,12 +291,13 @@ export async function embedTexts(
       results[index] = {
         embedding: new Array<number>(fallbackDims()).fill(0),
         fromModel: false,
+        model: LEXICAL_EMBEDDING_SPACE,
       };
       return;
     }
     const hit = cached[index];
     if (hit && hit.length > 0) {
-      results[index] = { embedding: hit, fromModel: true };
+      results[index] = { embedding: hit, fromModel: true, model: MODEL_EMBEDDING_SPACE };
       return;
     }
     pending.push(index);
@@ -234,7 +318,7 @@ export async function embedTexts(
         return;
       }
       try {
-        const vectors = await fetchModelEmbeddings(batch);
+        const vectors = await computeModelEmbeddings(batch);
         observedModelDim = vectors[0]?.length ?? observedModelDim;
         await Promise.all(
           batch.map((text, idx) => {
@@ -255,15 +339,19 @@ export async function embedTexts(
         );
       }
     }),
-    concurrency,
+    effectiveConcurrency,
   );
 
   for (const index of pending) {
     const text = prepared[index]!;
     const vector = modelVectors.get(text);
     results[index] = vector
-      ? { embedding: vector, fromModel: true }
-      : { embedding: deterministicEmbedding(text, fallbackDims()), fromModel: false };
+      ? { embedding: vector, fromModel: true, model: MODEL_EMBEDDING_SPACE }
+      : {
+          embedding: deterministicEmbedding(text, fallbackDims()),
+          fromModel: false,
+          model: LEXICAL_EMBEDDING_SPACE,
+        };
   }
 
   return results as EmbeddingResult[];
@@ -290,6 +378,7 @@ export async function addEmbeddingsToStories(stories: StoryNode[]) {
       ({
         ...story,
         embedding: embeddings[index]?.embedding,
+        embeddingModel: embeddings[index]?.model,
       }) satisfies StoryNode,
   );
 }

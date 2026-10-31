@@ -19,7 +19,7 @@ type LivePayload = StoryGraph & {
       vectorBackend: string;
       vectorCount: number;
       graphSeedCount: number;
-      mode: "vector+graph" | "graph" | "vector+graph+social";
+      mode: "vector+graph" | "graph" | "vector+graph+social" | "graph+social";
     };
     fetchedAt?: string;
     sessionId?: string;

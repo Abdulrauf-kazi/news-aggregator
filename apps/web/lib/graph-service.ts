@@ -47,7 +47,7 @@ export type GraphSnapshot = StoryGraph & {
       vectorBackend: string;
       vectorCount: number;
       graphSeedCount: number;
-      mode: "vector+graph" | "graph" | "vector+graph+social";
+      mode: "vector+graph" | "graph" | "vector+graph+social" | "graph+social";
     };
   };
 };
@@ -372,7 +372,9 @@ const buildRetrievalRecommendations = async (input: {
           ? ("vector+graph+social" as const)
           : hasVector
             ? ("vector+graph" as const)
-            : ("graph" as const),
+            : hasSocial
+              ? ("graph+social" as const)
+              : ("graph" as const),
     },
   };
 };

@@ -255,7 +255,8 @@ export async function GET(req: Request) {
   const limit = Number(params.get("limit") || "35");
 
   try {
-    const [hn, reddit, telegram, github, x] = await Promise.all([
+    // allSettled: one unreachable platform must not take down the whole feed.
+    const settled = await Promise.allSettled([
       fetchHackerNews(),
       fetchReddit(),
       fetchTelegram(),
@@ -263,14 +264,16 @@ export async function GET(req: Request) {
       fetchX(),
     ]);
 
-    const all = [...hn, ...reddit, ...telegram, ...github, ...x].sort(
+    const all = settled
+      .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+      .sort(
       (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
     );
 
     const items = all.slice(offset, offset + limit);
 
     return NextResponse.json({ items, offset, limit, total: all.length });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Internal server error fetching signals" },
       { status: 500 }

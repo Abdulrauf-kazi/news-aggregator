@@ -28,3 +28,11 @@
   - **Vector index thrash**: `ensureVectorStore` compared ID order, and ranking reshuffles stories on every request, so it rebuilt the index and wrote about 2MB to Redis per request. Search also alternated the index between 1000 and 280 stories.
   - **Like inflation**: like, unlike, like added +10 weight each time; unlike never reversed it.
   - Not fixed (pending live test): Google News `<source url>` (publisher homepage) is used as the story URL.
+- 2026-10-31 (session 2):
+  - **Dedupe never fired**: threshold 0.9 vs MiniLM paraphrase similarity of 0.5–0.86 gave recall 0. The bi-encoder also scores template-identical different events (USGS quakes) at 0.94. Resolved: threshold 0.58 plus a numeric-conflict veto. A cross-encoder is the proper fix (roadmap).
+  - **Hardcoded MongoDB Atlas credentials** in lib/mongodb.ts (still in git history; user must rotate). **Fixed AUTH_SECRET fallback** in production. **`.dockerignore`** did not exclude apps/web/.env.local. All resolved in code.
+  - **/api/horizon 500** whenever HN or Reddit was unreachable (Promise.all without per-source catch). Resolved with allSettled.
+  - **CF reasons showed user ids** ("Liked by 6ae642"): friend names were never passed. Resolved.
+  - **onnxruntime-node needs glibc**: the Alpine Docker image could not load it, so the Dockerfile moved to Debian slim. Docker Hub rate limits (429) and the sandbox TLS proxy needed a sandbox-only CA injection to build here; not a repo issue.
+  - **Scripts hang on exit when REDIS_URL is set** (the ioredis handle keeps the event loop alive). Resolved with an explicit process.exit in eval/cleanup/train scripts.
+  - Open: Google News publisherUrl = homepage; background ingestion re-triggers and stores placeholders when all sources fail; buildFriendRecommendations runs twice per request; 4 pre-existing TS errors with ignoreBuildErrors=true.

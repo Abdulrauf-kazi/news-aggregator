@@ -18,6 +18,12 @@ apps/**/.next
 .env
 .env.local
 .env.*.local
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Local model weights (downloaded at runtime or mounted)
+.models
 
 # Logs
 npm-debug.log*
