@@ -4,6 +4,11 @@
 - 2026-10-31 (session 2): Get the project ready for a deep-learning final evaluation: local neural inference, a trained topic head, an evaluation harness, a cleanup script, a full-app test, security fixes and docs. User-facing to-do list: `SETUP_TODO.md`. Insights and roadmap: `docs/MODEL_REPORT.md`.
 
 ## Recent Changes
+- **Article formatting for working sources (2026-11-04)**:
+  - `lib/article-cleanup.ts`: DOM-only cleaner run on Readability output (and a leaf-block fallback extractor when Readability fails). Removes bylines/timestamps, photo credits, "Issued on/Modified" lines, video-player/consent messages, "Recommended stories" blocks, link-only promos, exact repeats, empty wrappers and publisher attributes; wraps images in figures. Verified on live BBC, Al Jazeera and France 24 pages via Readability 0.6.0 in the browser.
+  - `/api/fetch-article`: HTML-only (images/JSON/PDF rejected), 5 MB cap, returns `status` (ok/short/empty/not-html/error) and `textLength`; old div-duplicating fallback strategies removed.
+  - Article page: shows the longer of extracted text vs the feed's own text, notice whenever the reader isn't getting the full article (not for data items without a page), overflow-safe body styles, reading time only for extracted text.
+  - Ingestion (`lib/text-format.ts`): feed HTML keeps paragraphs, entities decoded, "Continue reading..." / WordPress trailers removed, `content:encoded` preferred when longer. NWS titles include the area and no longer link to the JSON API; USGS gets a factual summary; arXiv keeps the abstract and authors.
 - **Source audit + demo news generator (2026-11-03/04)**:
   - `docs/source-audit.md`: all 46 sources audited (code + live feed checks). 9 working, 6 partial, 31 not working. All 18 Google News search sources store publisher homepages; CNN and WSJ feeds are abandoned (2023, Jan 2025); GDELT returns 429; Polymarket unreachable; OpenSky/GitHub/CoinGecko are junk. Google News links can be decoded (31/31 in-browser).
   - `scripts/audit-sources.ts`: read-only per-source audit against the running app.

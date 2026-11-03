@@ -19,6 +19,7 @@ import { classifyTopic, refineTopicsWithEmbeddings } from "./topic-classifier";
 import { isNearDuplicate } from "./dedupe";
 import { buildStoryRecommendations } from "./vector-store";
 import { getDemoGeneration, isDemoSource, withDemoStories } from "./demo-news";
+import { bestText, decodeEntities, htmlToParagraphs, unwrapParagraphs } from "./text-format";
 
 const REQUEST_TIMEOUT_MS = 8000;
 const STORIES_PER_SOURCE = 10;
@@ -27,13 +28,16 @@ const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const FRED_API_KEY = process.env.FRED_API_KEY;
 const EIA_API_KEY = process.env.EIA_API_KEY;
 
+/** Single-line text (titles): no tags, decoded entities, collapsed whitespace. */
 const cleanText = (value: string) =>
-  value
-    .replace(/<!\[CDATA\[(.*?)\]\]>/g, "$1")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+  decodeEntities(
+    decodeEntities(
+      value
+        .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+        .replace(/<[^>]+>/g, ""),
+    ),
+  )
+    .replace(/\s+/g, " ")
     .trim();
 
 const toIsoTimestamp = (value?: string | number) => {
@@ -125,7 +129,8 @@ const createStory = (
   publisherUrl?: string,
 ): StoryNode => {
   const normalizedTitle = cleanText(title || `Signal from ${sourceId}`);
-  const cleanedContent = content ? cleanText(content) : undefined;
+  // Keep paragraph breaks: story.content is rendered paragraph by paragraph.
+  const cleanedContent = content ? htmlToParagraphs(content) : undefined;
   const storyContent =
     cleanedContent && cleanedContent !== normalizedTitle ? cleanedContent : undefined;
   const { topic, strength } = classifyTopic({
@@ -187,8 +192,14 @@ const fetchRssStories = async (
         const publisherUrl = sourceUrls[idx];
         // Use publisherUrl as primary if available, otherwise fall back to item link
         const url = publisherUrl || item.link || item.guid || (item as any).uri;
-        const rawContent = item.contentSnippet || item.content || item.summary || (item as any).description || '';
-        const content = cleanText(rawContent);
+        // content:encoded often carries the whole article; description a standfirst.
+        const content = bestText(
+          (item as any)["content:encoded"],
+          item.content,
+          item.summary,
+          (item as any).description,
+          item.contentSnippet,
+        );
         const title = cleanText(item.title || "RSS item");
         
         return createStory(
@@ -222,8 +233,7 @@ const fetchGoogleNewsRssStories = async (
         const publisherUrl = sourceUrls[idx];
         // Use publisherUrl as primary if available, otherwise fall back to item link
         const url = publisherUrl || item.link || item.guid || (item as any).uri;
-        const rawContent = item.contentSnippet || item.content || item.summary || (item as any).description || '';
-        const content = cleanText(rawContent);
+        const content = bestText(item.content, item.summary, (item as any).description, item.contentSnippet);
         const title = cleanText(item.title || "Google News item");
         
         return createStory(
@@ -258,7 +268,7 @@ const fetchRss2JsonStories = async (
         item.title ?? "RSS2JSON item",
         item.pubDate ? new Date(item.pubDate).toISOString() : undefined,
         [],
-        item.description || item.content,
+        bestText(item.content, item.description),
         item.link,
         item.link
       ),
@@ -461,27 +471,28 @@ const fetchArxivStories = async (
   source: SourceDefinition,
 ): Promise<StoryNode[]> => {
   const xml = await requestText(source.endpoint);
-  const entryRegex =
-    /<entry>[\s\S]*?<id>(.*?)<\/id>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?<published>(.*?)<\/published>[\s\S]*?<\/entry>/g;
-  const entries: StoryNode[] = [];
-  let match = entryRegex.exec(xml);
-  while (match && entries.length < STORIES_PER_SOURCE) {
-    const url = cleanText(match[1] ?? "");
-    entries.push(
-      createStory(
-        source.id,
-        url || "arxiv",
-        cleanText(match[2] ?? "arXiv paper"),
-        new Date(match[3] ?? Date.now()).toISOString(),
-        [],
-        undefined,
-        url,
-        url
-      ),
+  const tag = (block: string, name: string) =>
+    block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`))?.[1]?.trim() ?? "";
+  const entries = Array.from(xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)).map((m) => m[1] ?? "");
+  return entries.slice(0, STORIES_PER_SOURCE).map((entry, idx) => {
+    const url = cleanText(tag(entry, "id"));
+    const authors = Array.from(entry.matchAll(/<name>([\s\S]*?)<\/name>/g)).map((m) => cleanText(m[1] ?? ""));
+    const abstract = unwrapParagraphs(cleanText(tag(entry, "summary")));
+    const byline = authors.length
+      ? `${authors.slice(0, 4).join(", ")}${authors.length > 4 ? ` and ${authors.length - 4} others` : ""}.`
+      : "";
+    const published = tag(entry, "published");
+    return createStory(
+      source.id,
+      url || `arxiv-${idx}`,
+      cleanText(tag(entry, "title") || "arXiv paper"),
+      published ? new Date(published).toISOString() : undefined,
+      [],
+      [abstract, byline && `Authors: ${byline}`].filter(Boolean).join("\n\n") || undefined,
+      url,
+      url
     );
-    match = entryRegex.exec(xml);
-  }
-  return entries;
+  });
 };
 
 const fetchCoinGeckoStories = async (
@@ -515,26 +526,48 @@ const fetchUsgsStories = async (
   const payload = await requestJson<{
     features?: Array<{
       id?: string;
-      properties?: { title?: string; time?: number; url?: string };
+      properties?: {
+        title?: string;
+        time?: number;
+        url?: string;
+        mag?: number | null;
+        place?: string;
+        type?: string;
+        tsunami?: number;
+        felt?: number | null;
+        alert?: string | null;
+        status?: string;
+        magType?: string;
+      };
+      geometry?: { coordinates?: number[] };
     }>;
   }>(source.endpoint);
 
   return (payload.features ?? [])
     .slice(0, STORIES_PER_SOURCE)
-    .map((item, idx) =>
-      createStory(
+    .map((item, idx) => {
+      const p = item.properties ?? {};
+      const depth = item.geometry?.coordinates?.[2];
+      const when = p.time ? new Date(p.time).toUTCString().replace(" GMT", " UTC") : undefined;
+      const summary = [
+        `A magnitude ${p.mag ?? "unknown"}${p.magType ? ` (${p.magType})` : ""} ${p.type ?? "earthquake"} was recorded ${p.place ? `${p.place}` : "by the USGS"}${when ? ` at ${when}` : ""}.`,
+        typeof depth === "number" ? `It occurred at a depth of about ${Math.round(depth * 10) / 10} km.` : "",
+        p.felt ? `${p.felt} people reported feeling it to the USGS "Did You Feel It?" service.` : "",
+        p.tsunami ? "The event carries a tsunami flag; check official tsunami warning centres for guidance." : "",
+        p.alert ? `USGS PAGER alert level: ${p.alert}.` : "",
+        p.status ? `Review status: ${p.status}.` : "",
+      ].filter(Boolean).join(" ");
+      return createStory(
         source.id,
         item.id ?? `${idx}`,
-        item.properties?.title ?? "USGS event",
-        item.properties?.time
-          ? new Date(item.properties.time).toISOString()
-          : undefined,
+        p.title ?? "USGS event",
+        p.time ? new Date(p.time).toISOString() : undefined,
         [],
-        undefined,
-        item.properties?.url,
-        item.properties?.url
-      ),
-    );
+        summary,
+        p.url,
+        p.url
+      );
+    });
 };
 
 const fetchNasaEonetStories = async (
@@ -571,26 +604,50 @@ const fetchNwsStories = async (
   const payload = await requestJson<{
     features?: Array<{
       id?: string;
-      properties?: { event?: string; effective?: string; description?: string };
+      properties?: {
+        event?: string;
+        effective?: string;
+        sent?: string;
+        description?: string;
+        instruction?: string | null;
+        headline?: string;
+        areaDesc?: string;
+        severity?: string;
+      };
     }>;
   }>(source.endpoint, {
     headers: { "User-Agent": "news-aggregator" },
   });
 
+  const shortArea = (areaDesc?: string) => {
+    const areas = (areaDesc ?? "").split(";").map((a) => a.trim()).filter(Boolean);
+    if (areas.length === 0) return "";
+    return areas.length > 2 ? `${areas.slice(0, 2).join("; ")} +${areas.length - 2} more` : areas.join("; ");
+  };
+
   return (payload.features ?? [])
     .slice(0, STORIES_PER_SOURCE)
-    .map((alert, idx) =>
-      createStory(
+    .map((alert, idx) => {
+      const p = alert.properties ?? {};
+      const area = shortArea(p.areaDesc);
+      const content = [
+        p.headline,
+        unwrapParagraphs(p.description),
+        p.instruction ? `What to do: ${unwrapParagraphs(p.instruction)}` : "",
+        p.areaDesc ? `Areas: ${p.areaDesc}.` : "",
+      ].filter(Boolean).join("\n\n");
+      return createStory(
         source.id,
         alert.id ?? `${idx}`,
-        alert.properties?.event ?? "NWS active alert",
-        alert.properties?.effective,
+        `${p.event ?? "NWS alert"}${area ? ` – ${area}` : ""}`,
+        p.effective ?? p.sent,
         [],
-        alert.properties?.description,
-        alert.id,
-        alert.id
-      ),
-    );
+        content,
+        // alert.id is the JSON API resource, not a page a reader can open.
+        undefined,
+        undefined
+      );
+    });
 };
 
 const fetchGenericStories = async (

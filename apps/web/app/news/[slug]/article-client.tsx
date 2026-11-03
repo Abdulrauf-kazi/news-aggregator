@@ -23,7 +23,18 @@ type ArticlePayload = {
   description?: string;
   author?: string;
   error?: string;
+  status?: "ok" | "short" | "empty" | "not-html" | "too-large" | "error";
+  textLength?: number;
 };
+
+/** Below this, extracted text is a teaser rather than the full article (matches the API). */
+const FULL_TEXT_MIN_CHARS = 600;
+
+const toParagraphs = (text: string) =>
+  text
+    .split(/\n\s*\n|\n/)
+    .map((paragraph) => paragraph.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
 
 const formatDate = (value?: string) => {
   if (!value) return "";
@@ -129,8 +140,9 @@ export default function ArticleClient({
       setError(null);
       setArticle(null);
 
-      // Demo-generated stories carry their full text and have no publisher page.
-      if (story.generated) {
+      // Demo-generated stories and data items (e.g. weather alerts) carry their
+      // full text and have no publisher page to fetch.
+      if (story.generated || (!story.url && !story.publisherUrl && story.content)) {
         setResolvedUrl(null);
         setIsLoading(false);
         return;
@@ -202,7 +214,22 @@ export default function ArticleClient({
   const articleTitle = article?.title || story.title;
   const articleSource = article?.siteName || getSourceLabel(story.sourceIds);
   const storyText = story.content?.trim();
-  const showError = !isLoading && !!error;
+  // Prefer whichever is more complete: the publisher page or the feed's own text.
+  const extractedLength = article?.textLength ?? article?.text?.trim().length ?? 0;
+  const summaryText = storyText || article?.description?.trim() || "";
+  const showExtracted =
+    !!sanitizedHtml &&
+    extractedLength > 0 &&
+    (extractedLength >= FULL_TEXT_MIN_CHARS || extractedLength >= summaryText.length);
+  const shownLength = showExtracted ? extractedLength : summaryText.length;
+  // Be honest whenever the reader is not getting the full article.
+  // (Data items with no web page, e.g. weather alerts, are complete as they are.)
+  const hasPublisherPage = !!(story.url || story.publisherUrl);
+  const showError =
+    !isLoading &&
+    !story.generated &&
+    (!!error || shownLength < FULL_TEXT_MIN_CHARS) &&
+    (hasPublisherPage || shownLength === 0);
   const displaySourceUrl = article?.finalUrl || resolvedUrl;
 
   return (
@@ -222,7 +249,7 @@ export default function ArticleClient({
           </span>
           <span className="font-body text-[13px] font-semibold text-[#44403c]">{articleSource}</span>
           {articleDate && <span className="font-body text-[13px] text-[#78716c]">· {articleDate}</span>}
-          {article?.readingTime ? (
+          {showExtracted && article?.readingTime ? (
             <span className="font-body text-[13px] text-[#78716c]">· {article.readingTime} min read</span>
           ) : null}
         </div>
@@ -253,23 +280,26 @@ export default function ArticleClient({
             className="mb-8 flex items-start gap-3 rounded-xl border border-[#e7e5e4] bg-white px-5 py-4 text-[14px] leading-relaxed text-[#57534e]"
           >
             <span className="material-symbols-outlined mt-0.5 text-[18px] text-[#78716c]" aria-hidden="true">info</span>
-            <span>The full article couldn&apos;t be loaded from the publisher, so we&apos;re showing a summary. Use <strong className="font-semibold text-[#1c1917]">Original source</strong> to read it there.</span>
+            <span>
+              The full article couldn&apos;t be loaded from the publisher, so we&apos;re showing {shownLength > 0 ? "a summary" : "what we know about this story"}.
+              {displaySourceUrl ? (
+                <> Use <strong className="font-semibold text-[#1c1917]">Original source</strong> to read it there.</>
+              ) : null}
+            </span>
           </div>
         )}
 
         {!isLoading && (
-          <div className="article-body">
-            {sanitizedHtml ? (
+          <div className="article-body min-w-0 max-w-full [overflow-wrap:anywhere]">
+            {showExtracted ? (
               <div
-                className="text-[17px] leading-[1.85] text-[#292524] [&_a]:text-[#ff3e00] [&_a]:underline [&_blockquote]:my-6 [&_blockquote]:border-l-4 [&_blockquote]:border-[#ff3e00] [&_blockquote]:pl-5 [&_figure]:my-8 [&_figcaption]:mt-2 [&_figcaption]:text-center [&_figcaption]:text-sm [&_figcaption]:text-[#78716c] [&_h2]:mb-4 [&_h2]:mt-10 [&_h2]:font-headline [&_h2]:text-[24px] [&_h2]:font-black [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:font-headline [&_h3]:text-[20px] [&_h3]:font-bold [&_img]:my-8 [&_img]:max-w-full [&_img]:rounded-xl [&_li]:mb-2 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-5 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-6"
+                className="text-[17px] leading-[1.85] text-[#292524] [&_a]:text-[#c2410c] [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:my-6 [&_blockquote]:border-l-4 [&_blockquote]:border-[#ff3e00] [&_blockquote]:pl-5 [&_blockquote]:italic [&_figure]:my-8 [&_figure]:max-w-full [&_figcaption]:mt-2 [&_figcaption]:text-center [&_figcaption]:text-sm [&_figcaption]:leading-snug [&_figcaption]:text-[#78716c] [&_h2]:mb-4 [&_h2]:mt-10 [&_h2]:font-headline [&_h2]:text-[24px] [&_h2]:font-black [&_h2]:leading-tight [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:font-headline [&_h3]:text-[20px] [&_h3]:font-bold [&_h4]:mb-3 [&_h4]:mt-6 [&_h4]:font-bold [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-xl [&_li]:mb-2 [&_ol]:my-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-5 [&_pre]:overflow-x-auto [&_table]:my-6 [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_td]:border [&_td]:border-[#e7e5e4] [&_td]:px-3 [&_td]:py-2 [&_th]:border [&_th]:border-[#e7e5e4] [&_th]:px-3 [&_th]:py-2 [&_ul]:my-4 [&_ul]:list-disc [&_ul]:pl-6 [&_video]:max-w-full"
                 dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
               />
-            ) : article?.text ? (
-              <p className="whitespace-pre-wrap text-[17px] leading-[1.85] text-[#292524]">{article.text}</p>
-            ) : storyText ? (
+            ) : summaryText ? (
               <div className="text-[17px] leading-[1.85] text-[#292524]">
-                {storyText.split("\n").filter(Boolean).map((paragraph) => (
-                  <p key={paragraph} className="mb-5">{paragraph}</p>
+                {toParagraphs(summaryText).map((paragraph, index) => (
+                  <p key={`${index}-${paragraph.slice(0, 24)}`} className="mb-5">{paragraph}</p>
                 ))}
               </div>
             ) : (
