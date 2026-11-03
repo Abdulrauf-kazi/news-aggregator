@@ -43,3 +43,5 @@
   - **Raw error text** ("fetch failed") shown on article pages. Replaced with a neutral notice.
   - **Low contrast**: #a8a29e meta text on white (2.5:1) and text-white/15–40 on insights (2–3.8:1). Raised.
   - Note: the "impeccable" design skill requested by the user is not installed in this environment; the UI pass followed equivalent audit → fix → verify steps manually.
+- 2026-11-03 (source audit, open): Google News sources store `<source url>` (publisher homepage) as the story URL (179/179 live items); France 24 puts photo URLs in `<source url>`; CNN `edition.rss` abandoned since 2023 and WSJ `RSSWorldNews.xml` since Jan 2025 (undated CNN items stamped "now"); GDELT 429s parallel requests (~12s, plain text); Polymarket unreachable from the dev network; X/Telegram have no adapter (XML parsed as JSON); OpenSky `states` arrays become "Signal N". Temporary mitigation: demo news generator (`lib/demo-news.ts`). Real fixes planned in docs/source-audit.md Phase 2.
+- 2026-11-04: Demo generator tested only against a mock OpenRouter and in-memory Mongo (26 checks); not yet run against the real model or DB. Free OpenRouter models allow ~50 requests/day (4 per cycle).

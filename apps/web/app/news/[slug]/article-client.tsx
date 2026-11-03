@@ -129,6 +129,13 @@ export default function ArticleClient({
       setError(null);
       setArticle(null);
 
+      // Demo-generated stories carry their full text and have no publisher page.
+      if (story.generated) {
+        setResolvedUrl(null);
+        setIsLoading(false);
+        return;
+      }
+
       try {
         const resolutionResponse = await fetch("/api/resolve-article-url", {
           method: "POST",
@@ -273,18 +280,20 @@ export default function ArticleClient({
           </div>
         )}
 
-        {displaySourceUrl && (
-          <div className="mt-10 flex items-center gap-4">
-            <a
-              href={displaySourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg bg-[#1c1917] px-5 py-3 font-headline text-[11px] font-black uppercase tracking-widest text-white transition-all hover:bg-[#ff3e00]"
-            >
-              Original source
-              <span className="material-symbols-outlined text-[15px]">open_in_new</span>
-            </a>
-            
+        {!isLoading && (
+          <div className="mt-10 flex flex-wrap items-center gap-4">
+            {displaySourceUrl && (
+              <a
+                href={displaySourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg bg-[#1c1917] px-5 py-3 font-headline text-[11px] font-black uppercase tracking-widest text-white transition-all hover:bg-[#ff3e00]"
+              >
+                Original source
+                <span className="material-symbols-outlined text-[15px]">open_in_new</span>
+              </a>
+            )}
+
             <button 
               onClick={handleToggleLike}
               disabled={!session || isLiking}

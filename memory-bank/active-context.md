@@ -4,6 +4,11 @@
 - 2026-10-31 (session 2): Get the project ready for a deep-learning final evaluation: local neural inference, a trained topic head, an evaluation harness, a cleanup script, a full-app test, security fixes and docs. User-facing to-do list: `SETUP_TODO.md`. Insights and roadmap: `docs/MODEL_REPORT.md`.
 
 ## Recent Changes
+- **Source audit + demo news generator (2026-11-03/04)**:
+  - `docs/source-audit.md`: all 46 sources audited (code + live feed checks). 9 working, 6 partial, 31 not working. All 18 Google News search sources store publisher homepages; CNN and WSJ feeds are abandoned (2023, Jan 2025); GDELT returns 429; Polymarket unreachable; OpenSky/GitHub/CoinGecko are junk. Google News links can be decoded (31/31 in-browser).
+  - `scripts/audit-sources.ts`: read-only per-source audit against the running app.
+  - `lib/demo-news.ts`: for the 31 not-working sources (demo mode, on when `OPENROUTER_API_KEY` is set), live fetching is skipped and one OpenRouter-generated story per source is shown, replaced every 15 min (failures keep the previous story). Stored in `demo_generated_stories`, merged at read time by `withDemoStories`; `stories` is never written. Scheduler via `instrumentation.ts`, `/api/demo-news` (GET status, POST run), `scripts/generate-demo-news.ts`. Off with `DEMO_NEWS_ENABLED=0`.
+- **Next steps**: Phase 2 source fixes from docs/source-audit.md (URL capture, Google News decode, fetcher checks, notice, quality gate), then turn demo mode off.
 - **UI upgrade (2026-10-31, PR #1)**:
   - Home: the feed was trapped in a fixed-height inner scroll box, so it looked empty. It now uses normal page scroll with a sticky desktop sidebar, new story cards (sentence-case titles, topic colour chips, relative time, real source names), topic filters, and "Show more" pagination (24 per page).
   - Mobile: the navbar previously hid all navigation and sign-in below 768px. It now has a hamburger menu and a search button.

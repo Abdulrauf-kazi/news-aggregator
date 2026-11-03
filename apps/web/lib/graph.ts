@@ -13,6 +13,8 @@ export type StoryNode = {
   embeddingModel?: string;
   url?: string;
   publisherUrl?: string;
+  /** Written by the demo generator (lib/demo-news.ts), not ingested from the source's feed. */
+  generated?: boolean;
 };
 
 export type GraphNode = {

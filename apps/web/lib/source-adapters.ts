@@ -18,6 +18,7 @@ import { baseSignalScore, isSyntheticStory } from "./story-quality";
 import { classifyTopic, refineTopicsWithEmbeddings } from "./topic-classifier";
 import { isNearDuplicate } from "./dedupe";
 import { buildStoryRecommendations } from "./vector-store";
+import { getDemoGeneration, isDemoSource, withDemoStories } from "./demo-news";
 
 const REQUEST_TIMEOUT_MS = 8000;
 const STORIES_PER_SOURCE = 10;
@@ -1018,10 +1019,28 @@ const fetchStoriesForSource = async (
   }
 };
 
-export const buildLiveGraph = async (): Promise<StoryGraph> => {
+export const buildLiveGraph = async (): Promise<StoryGraph & { demoGeneration?: string }> => {
+  // Read before ingesting, so a cycle that finishes mid-build invalidates this graph.
+  const demoGeneration = await getDemoGeneration();
   // Ingestion -> Normalize -> Embed -> Deduplicate
+  // Sources whose live feed is broken are served by lib/demo-news.ts instead of fetched.
   const results = await Promise.all(
-    SOURCE_DEFINITIONS.map((source) => fetchStoriesForSource(source)),
+    SOURCE_DEFINITIONS.map((source) =>
+      isDemoSource(source.id)
+        ? Promise.resolve({
+            stories: [] as StoryNode[],
+            metric: {
+              sourceId: source.id,
+              sourceLabel: source.label,
+              endpoint: source.endpoint,
+              ok: true,
+              mode: "generated" as const,
+              storyCount: 1,
+              lastFetchedAt: new Date().toISOString(),
+            },
+          })
+        : fetchStoriesForSource(source),
+    ),
   );
 
   const fetchedStories = results.flatMap((result) => result.stories);
@@ -1088,14 +1107,17 @@ export const buildLiveGraph = async (): Promise<StoryGraph> => {
     return createStoryGraphFromStories(fallbackStories);
   }
 
-  const storiesForGraph = storedStories.slice(0, 280);
+  const storiesForGraph = (await withDemoStories(storedStories)).slice(0, 280);
   const recommendations = await buildStoryRecommendations({
     stories: storiesForGraph,
     topK: VECTOR_SEARCH_TOP_K,
   });
 
-  return createStoryGraphFromRecommendations({
-    stories: storiesForGraph,
-    recommendations,
-  });
+  return {
+    ...createStoryGraphFromRecommendations({
+      stories: storiesForGraph,
+      recommendations,
+    }),
+    demoGeneration,
+  };
 };

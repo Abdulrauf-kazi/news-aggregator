@@ -4,6 +4,7 @@ import { buildLiveGraph } from "./source-adapters";
 import { cacheJson, getCachedJson } from "./redis";
 import { readSourceMetrics, readStoredStories } from "./story-db";
 import { isSyntheticStory } from "./story-quality";
+import { getDemoGeneration, noteDemoActivity } from "./demo-news";
 import { ensureVectorStore, queryTopKSimilarStories } from "./vector-store";
 import {
   getSessionRecentStories,
@@ -514,15 +515,20 @@ export async function getGraphSnapshot(options?: {
   sessionId?: string;
   userId?: string;
 }): Promise<GraphSnapshot> {
+  noteDemoActivity();
   const recentSessionStories = await getSessionRecentStories(
     options?.sessionId,
   );
 
   const cached = options?.forceRefresh
     ? null
-    : await getCachedJson<StoryGraph>(GRAPH_CACHE_KEY);
+    : await getCachedJson<StoryGraph & { demoGeneration?: string }>(GRAPH_CACHE_KEY);
+  // A cached graph built before the latest demo-news cycle still holds the
+  // previous (deleted) generated stories, so it is treated as a cache miss.
+  const cachedIsCurrent =
+    !!cached && (cached.demoGeneration ?? "disabled") === (await getDemoGeneration());
 
-  if (cached && cached.stories.length > 0 && !shouldBypassStoredStories(cached.stories)) {
+  if (cached && cachedIsCurrent && cached.stories.length > 0 && !shouldBypassStoredStories(cached.stories)) {
     const [stories, metrics] = await Promise.all([
       readStoredStories(),
       readSourceMetrics(),
