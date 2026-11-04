@@ -15,7 +15,8 @@
  *   OPENROUTER_MODEL                default nvidia/nemotron-3-ultra-550b-a55b:free
  *   DEMO_NEWS_ENABLED=0             turn the whole feature off (live ingestion for all sources)
  *   DEMO_NEWS_INTERVAL_MINUTES      default 15
- *   DEMO_NEWS_BATCH_SIZE            sources per API call, default 8 (31 sources -> 4 calls/cycle)
+ *   DEMO_NEWS_BATCH_SIZE            sources per API call, default 4 (31 sources -> 8 calls/cycle)
+ *   DEMO_NEWS_CONCURRENCY           calls in parallel, default 3
  *   DEMO_NEWS_SOURCES               optional comma list overriding DEMO_SOURCE_IDS
  *   DEMO_NEWS_IDLE_MINUTES          skip cycles when nobody has loaded the app for this long, default 30
  *
@@ -112,9 +113,11 @@ export const demoConfig = () => {
     model: env("OPENROUTER_MODEL") ?? "nvidia/nemotron-3-ultra-550b-a55b:free",
     baseUrl: (env("OPENROUTER_BASE_URL") ?? "https://openrouter.ai/api/v1").replace(/\/$/, ""),
     intervalMs: Math.max(1, Number(env("DEMO_NEWS_INTERVAL_MINUTES") ?? 15)) * 60_000,
-    batchSize: Math.max(1, Math.min(31, Number(env("DEMO_NEWS_BATCH_SIZE") ?? 8))),
+    // Small batches: the free model writes ~30 tokens/s, so 8 articles per call ran past the timeout.
+    batchSize: Math.max(1, Math.min(31, Number(env("DEMO_NEWS_BATCH_SIZE") ?? 4))),
+    concurrency: Math.max(1, Math.min(8, Number(env("DEMO_NEWS_CONCURRENCY") ?? 3))),
     idleMs: Math.max(1, Number(env("DEMO_NEWS_IDLE_MINUTES") ?? 30)) * 60_000,
-    requestTimeoutMs: Number(env("DEMO_NEWS_TIMEOUT_MS") ?? 180_000),
+    requestTimeoutMs: Number(env("DEMO_NEWS_TIMEOUT_MS") ?? 240_000),
     sourceIds: ids,
   };
 };
@@ -245,7 +248,7 @@ export const buildPrompt = (sourceIds: string[], now: Date) => {
     "Rules:",
     "- One article per requested sourceId; each on a different subject.",
     "- Headline: 6-16 words, no outlet name, no clickbait.",
-    "- Body: 3-5 paragraphs, 180-280 words, separated by a blank line. No markdown, no bullet points, no headings.",
+    "- Body: 3-4 paragraphs, 150-220 words, separated by a blank line. No markdown, no bullet points, no headings.",
     "- Do not invent direct quotes attributed to real, named people.",
     "- Do not allege crimes, deaths, injuries, scandals or misconduct involving real, named people or companies.",
     "- Do not report election results, vote counts, polls, or who is winning any election.",
@@ -303,7 +306,7 @@ async function callOpenRouter(sourceIds: string[], now: Date): Promise<Generated
         body: JSON.stringify({
           model: config.model,
           temperature: 0.8,
-          max_tokens: Math.min(16000, 900 * sourceIds.length + 1500),
+          max_tokens: Math.min(16000, 700 * sourceIds.length + 1200),
           reasoning: { effort: "low", exclude: true },
           messages: [
             { role: "system", content: system },
@@ -332,7 +335,11 @@ async function callOpenRouter(sourceIds: string[], now: Date): Promise<Generated
       return parseModelJson(content);
     } catch (error) {
       lastError = error;
-      if (controller.signal.aborted) lastError = new Error(`OpenRouter request timed out after ${config.requestTimeoutMs}ms`);
+      if (controller.signal.aborted) {
+        // Retrying the same long request would just time out again; give up on this batch.
+        lastError = new Error(`OpenRouter request timed out after ${config.requestTimeoutMs}ms`);
+        break;
+      }
     } finally {
       clearTimeout(timer);
     }
@@ -401,7 +408,9 @@ export async function runDemoNewsCycle(options: { reason?: string } = {}): Promi
   const run = (async () => {
     console.log(`[demo-news] cycle ${cycleId} started (${options.reason ?? "scheduled"}), ${config.sourceIds.length} sources`);
     const accepted: GeneratedItem[] = [];
-    for (const batch of chunk(config.sourceIds, config.batchSize)) {
+    const batches = chunk(config.sourceIds, config.batchSize);
+    let nextBatch = 0;
+    const runBatch = async (batch: string[], index: number) => {
       const t0 = Date.now();
       try {
         const items = await callOpenRouter(batch, startedAt);
@@ -416,12 +425,23 @@ export async function runDemoNewsCycle(options: { reason?: string } = {}): Promi
           result.failed.push({ sourceId: id, reason: "missing or too short in model reply" });
         }
         result.calls.push({ sources: batch, ok: true, ms: Date.now() - t0 });
+        console.log(`[demo-news] call ${index + 1}/${batches.length} ok in ${Math.round((Date.now() - t0) / 1000)}s: ${seen.size}/${batch.length} stories`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         result.calls.push({ sources: batch, ok: false, ms: Date.now() - t0, error: message });
         for (const id of batch) result.failed.push({ sourceId: id, reason: message });
+        console.log(`[demo-news] call ${index + 1}/${batches.length} failed after ${Math.round((Date.now() - t0) / 1000)}s: ${message.slice(0, 160)}`);
       }
-    }
+    };
+    // A few calls at a time: much faster than one by one, well within the free tier's 20 requests/min.
+    await Promise.all(
+      Array.from({ length: Math.min(config.concurrency, batches.length) }, async () => {
+        while (nextBatch < batches.length) {
+          const index = nextBatch++;
+          await runBatch(batches[index] as string[], index);
+        }
+      }),
+    );
 
     if (accepted.length > 0) {
       const stories = await addEmbeddings(await toStories(accepted, cycleId, startedAt));
@@ -493,6 +513,7 @@ export async function getDemoStatus() {
     model: config.model,
     intervalMinutes: config.intervalMs / 60_000,
     batchSize: config.batchSize,
+    concurrency: config.concurrency,
     callsPerCycle: Math.ceil(config.sourceIds.length / config.batchSize),
     sources: config.sourceIds,
     storedGeneratedStories: count,
