@@ -306,7 +306,8 @@ async function callOpenRouter(sourceIds: string[], now: Date): Promise<Generated
         body: JSON.stringify({
           model: config.model,
           temperature: 0.8,
-          max_tokens: Math.min(16000, 700 * sourceIds.length + 1200),
+          // Reasoning tokens count against max_tokens; too low a cap ends the reply before any text.
+          max_tokens: Math.min(16000, 1600 * sourceIds.length + 3000),
           reasoning: { effort: "low", exclude: true },
           messages: [
             { role: "system", content: system },
