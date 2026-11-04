@@ -1,10 +1,10 @@
 import type { StoryNode } from "./graph";
 import {
-  getFollowingIds,
+  LIKE_INTERACTION_WEIGHT,
+  getFollowing,
   getMultipleUsersReadingHistory,
   getUserReadingHistory,
   getFriendsLikedStoryIdsByFriendIds,
-  type UserInteraction,
 } from "./social-db";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -28,6 +28,8 @@ export type FriendActivity = {
 };
 
 // ── Core ALS-Style Collaborative Filtering ───────────────────────────────────
+
+const dampWeight = (weight: number) => Math.log1p(Math.max(0, weight));
 
 /**
  * Computes Jaccard similarity between two users based on their reading history.
@@ -70,11 +72,16 @@ export async function buildFriendRecommendations(input: {
   recommendations: SocialRecommendation[];
   friendActivity: FriendActivity[];
 }> {
-  // 1. Get the user's friend list
-  const friendIds = await getFollowingIds(input.userId);
+  // 1. Get the user's friend list (with display names for the "Liked by" reasons;
+  //    previously no names were passed, so reasons showed truncated user ids)
+  const following = await getFollowing(input.userId);
+  const friendIds = following.map((friend) => friend.id);
   if (friendIds.length === 0) {
     return { recommendations: [], friendActivity: [] };
   }
+  const friendNames =
+    input.friendNames ??
+    new Map(following.map((friend) => [friend.id, friend.name || friend.email.split("@")[0] || "A friend"]));
 
   // 2. Get reading histories + liked story IDs for all friends in parallel
   const [userHistory, friendHistories, friendLikeMap] = await Promise.all([
@@ -110,7 +117,7 @@ export async function buildFriendRecommendations(input: {
     const friendSim = friendSimilarities.get(friendId) ?? 0;
     const effectiveSimilarity = Math.max(0.1, friendSim);
     const friendLikes = friendLikeMap.get(friendId) ?? new Set<string>();
-    const friendName = input.friendNames?.get(friendId) ?? friendId.slice(0, 6);
+    const friendName = friendNames.get(friendId) ?? "A friend";
 
     for (const interaction of friendHistory) {
       if (userStorySet.has(interaction.storyId)) continue;
@@ -127,7 +134,8 @@ export async function buildFriendRecommendations(input: {
         likedByFriendNames: [],
       };
 
-      existing.score += effectiveSimilarity * interaction.weight * likeBoost;
+      // log-damped implicit rating: weights grow without bound via $inc
+      existing.score += effectiveSimilarity * dampWeight(interaction.weight) * likeBoost;
 
       if (!existing.friendIds.includes(friendId)) {
         existing.friendIds.push(friendId);
@@ -147,7 +155,7 @@ export async function buildFriendRecommendations(input: {
   for (const [friendId, likedIds] of friendLikeMap) {
     const friendSim = friendSimilarities.get(friendId) ?? 0;
     const effectiveSimilarity = Math.max(0.1, friendSim);
-    const friendName = input.friendNames?.get(friendId) ?? friendId.slice(0, 6);
+    const friendName = friendNames.get(friendId) ?? "A friend";
 
     for (const storyId of likedIds) {
       if (userStorySet.has(storyId)) continue;
@@ -155,7 +163,7 @@ export async function buildFriendRecommendations(input: {
       if (candidateScores.has(storyId)) continue; // already scored via interactions
 
       candidateScores.set(storyId, {
-        score: effectiveSimilarity * 10 * 1.5,
+        score: effectiveSimilarity * dampWeight(LIKE_INTERACTION_WEIGHT) * 1.5,
         friendIds: [friendId],
         friendNames: [friendName],
         likedByFriendIds: [friendId],
@@ -213,7 +221,7 @@ export async function buildFriendRecommendations(input: {
   const activityMap = new Map<string, FriendActivity>(); // key: friendId+storyId
 
   for (const [friendId, friendHistory] of friendHistories) {
-    const friendName = input.friendNames?.get(friendId) ?? friendId.slice(0, 6);
+    const friendName = friendNames.get(friendId) ?? "A friend";
     for (const interaction of friendHistory.slice(0, 5)) {
       const story = storyById.get(interaction.storyId);
       if (!story) continue;
@@ -232,7 +240,7 @@ export async function buildFriendRecommendations(input: {
 
   // Overlay liked entries — they take priority over plain "read" entries
   for (const [friendId, likedIds] of friendLikeMap) {
-    const friendName = input.friendNames?.get(friendId) ?? friendId.slice(0, 6);
+    const friendName = friendNames.get(friendId) ?? "A friend";
     for (const storyId of likedIds) {
       const story = storyById.get(storyId);
       if (!story) continue;

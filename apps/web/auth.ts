@@ -1,16 +1,18 @@
 import NextAuth from "next-auth";
 import { MongoDBAdapter } from "@auth/mongodb-adapter";
-import clientPromise from "./lib/mongodb";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
-import { getDb } from "./lib/mongodb";
+import { getClientPromise, getDb } from "./lib/mongodb";
 
 const nextAuthResult = NextAuth({
   trustHost: true, // Included from incoming changes for deployment stability
-  adapter: MongoDBAdapter(clientPromise),
+  adapter: MongoDBAdapter(() => getClientPromise()),
   session: { strategy: "jwt" },
-  secret: process.env.AUTH_SECRET || "fallback-secret-for-dev-only-change-in-prod",
+  // A fixed fallback secret in production would let anyone forge session JWTs.
+  secret:
+    process.env.AUTH_SECRET ??
+    (process.env.NODE_ENV === "production" ? undefined : "dev-only-insecure-secret"),
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "mock-client-id",

@@ -140,37 +140,38 @@ export async function getSessionRelevanceByStory(input: {
   const sessionIdRaw = input.sessionId?.trim();
   const userId = input.userId;
   
-  const [topicWeights, storyWeights, userTopicInterests] = await Promise.all([
+  const [topicWeights, userTopicInterests] = await Promise.all([
     sessionIdRaw ? getJsonValue<SessionTopicWeights>(topicsKey(clampSessionId(sessionIdRaw))) : Promise.resolve(null),
-    sessionIdRaw ? getJsonValue<SessionStoryWeights>(storiesKey(clampSessionId(sessionIdRaw))) : Promise.resolve(null),
     userId ? import("./social-db").then(m => m.getUserTopicInterests(userId)) : Promise.resolve(null),
   ]);
 
-  if (!topicWeights && !storyWeights && !userTopicInterests) {
+  // Each signal is normalised by its own max before blending. Previously raw sums
+  // were added, so lifetime user interests (likes add 10 each) drowned out the
+  // live session, and stories the reader had already clicked were boosted back
+  // to the top of their own feed.
+  const normalizeMap = (map: Record<string, number> | null) => {
+    const values = Object.values(map ?? {});
+    const max = values.length > 0 ? Math.max(...values) : 0;
+    if (max <= 0) return null;
+    return Object.fromEntries(
+      Object.entries(map ?? {}).map(([key, value]) => [key, Math.max(0, value) / max]),
+    ) as Record<string, number>;
+  };
+
+  const sessionTopics = normalizeMap(topicWeights);
+  const userTopics = normalizeMap(userTopicInterests);
+  if (!sessionTopics && !userTopics) {
     return {};
   }
 
-  const topicMap = topicWeights ?? {};
-  const storyMap = storyWeights ?? {};
-  const userTopicMap = userTopicInterests ?? {};
+  const sessionWeight = sessionTopics ? (userTopics ? 0.6 : 1) : 0;
+  const userWeight = userTopics ? (sessionTopics ? 0.4 : 1) : 0;
 
-  const rawScores: Record<string, number> = {};
-  let maxScore = 0;
+  const scores: Record<string, number> = {};
   for (const story of input.stories) {
-    const value = (topicMap[story.topic] ?? 0) + (storyMap[story.id] ?? 0) + (userTopicMap[story.topic] ?? 0);
-    rawScores[story.id] = value;
-    if (value > maxScore) {
-      maxScore = value;
-    }
+    scores[story.id] =
+      sessionWeight * (sessionTopics?.[story.topic] ?? 0) +
+      userWeight * (userTopics?.[story.topic] ?? 0);
   }
-
-  if (maxScore <= 0) {
-    return {};
-  }
-
-  const normalized: Record<string, number> = {};
-  for (const story of input.stories) {
-    normalized[story.id] = (rawScores[story.id] ?? 0) / maxScore;
-  }
-  return normalized;
+  return scores;
 }

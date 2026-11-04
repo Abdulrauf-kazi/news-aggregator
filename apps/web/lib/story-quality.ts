@@ -55,3 +55,11 @@ export const hasLikelyDirectArticleUrl = (
 
   return /^https?:\/\//i.test(story.url);
 };
+
+// Base signal score in [50, 100]: strength of topical evidence plus whether the
+// item carries a real summary. Cross-source coverage is added on dedupe merge.
+export const baseSignalScore = (topicStrength: number, content?: string) => {
+  const topical = Math.min(24, topicStrength * 6);
+  const hasSummary = (content?.length ?? 0) >= 80 ? 8 : 0;
+  return Math.min(100, 50 + topical + hasSummary);
+};

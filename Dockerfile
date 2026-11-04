@@ -5,6 +5,9 @@
 # Stage 1 (pruner)  — Extract only the code needed for apps/web
 # Stage 2 (builder) — Install deps & build the standalone Next.js app
 # Stage 3 (runner)  — Tiny production image with just the runtime files
+#
+# Debian slim (glibc) instead of Alpine (musl): the in-process embedding model
+# runs on onnxruntime-node, whose prebuilt binaries require glibc.
 # =============================================================
 
 
@@ -13,7 +16,7 @@
 # Use Turbo's prune feature to create a minimal copy of the
 # monorepo containing ONLY what apps/web depends on.
 # ─────────────────────────────────────────────────────────────
-FROM oven/bun:1-alpine AS pruner
+FROM oven/bun:1-slim AS pruner
 WORKDIR /app
 
 # Install Turbo globally so we can run the prune command
@@ -33,7 +36,7 @@ RUN turbo prune web --docker
 # STAGE 2: Builder
 # Install dependencies and compile the Next.js application.
 # ─────────────────────────────────────────────────────────────
-FROM oven/bun:1-alpine AS builder
+FROM oven/bun:1-slim AS builder
 WORKDIR /app
 
 # --- Dependency Installation (Docker Cache-Friendly) ---
@@ -78,7 +81,7 @@ RUN bunx turbo run build --filter=web --env-mode=loose
 # This is the image that actually gets deployed. It contains
 # ONLY the minimal runtime files — no source code, no devDeps.
 # ─────────────────────────────────────────────────────────────
-FROM oven/bun:1-alpine AS runner
+FROM oven/bun:1-slim AS runner
 WORKDIR /app
 
 # Set production environment
@@ -87,8 +90,8 @@ ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # Security: Don't run as root. Create a dedicated non-root user.
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
+RUN groupadd --system --gid 1001 nodejs && \
+    useradd --system --uid 1001 --gid nodejs --create-home nextjs
 
 # Copy the three parts of the standalone Next.js build:
 # 1. The standalone server (a self-contained Node.js server + minimal node_modules)

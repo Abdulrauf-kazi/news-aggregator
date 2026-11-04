@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSession, signOut } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useStories } from "../../lib/stories-context";
 import type { StoryNode } from "../../lib/graph";
 import { getStorySlug } from "../../lib/news-routing";
@@ -20,8 +20,27 @@ type SearchResult = {
   relevance: number;
 };
 
+const NAV_LINKS = [
+  { href: "/", label: "Home" },
+  { href: "/news-graph", label: "Network" },
+  { href: "/insights", label: "Insights" },
+  { href: "/bookmarks", label: "Saved" },
+];
+
 export function Navbar() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname?.startsWith(href));
+
+  // Close the mobile menu on navigation and on Escape.
+  useEffect(() => setMobileOpen(false), [pathname]);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMobileOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobileOpen]);
   const { data: session, status } = useSession();
   const [showMenu, setShowMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -162,58 +181,81 @@ export function Navbar() {
 
   return (
     <>
-      <nav className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-[#d6d3d1]">
-        <div className="flex justify-between items-center px-6 lg:px-12 h-16 max-w-[1800px] mx-auto">
-          <div className="flex items-center gap-10">
-            <Link className="flex items-center gap-2" href="/">
-              <span className="text-xl font-black text-[#1c1917] uppercase tracking-tight font-headline flex items-center">
+      <nav aria-label="Main" className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-[#d6d3d1]">
+        <div className="flex justify-between items-center gap-3 px-4 sm:px-6 lg:px-12 h-16 max-w-[1800px] mx-auto">
+          <div className="flex items-center gap-10 min-w-0">
+            <Link className="flex items-center gap-2 shrink-0" href="/" aria-label="News Monitor home">
+              <span className="text-lg sm:text-xl font-black text-[#1c1917] uppercase tracking-tight font-headline flex items-center">
                 News<span className="text-[#ff3e00] ml-1">Monitor</span>
               </span>
             </Link>
-            <div className="hidden lg:flex items-center gap-6 font-headline font-bold text-[11px] uppercase tracking-widest">
-              <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/">Home</Link>
-              <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/news-graph">Network</Link>
-              <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/insights">Visualize</Link>
-              <Link className="text-[#57534e] hover:text-[#1c1917] transition-colors" href="/bookmarks">Archive</Link>
+            <div className="hidden lg:flex items-center gap-1 font-headline font-bold text-[11px] uppercase tracking-widest">
+              {NAV_LINKS.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  aria-current={isActive(link.href) ? "page" : undefined}
+                  className={`rounded-md px-3 py-2 transition-colors ${
+                    isActive(link.href) ? "bg-[#f5f5f4] text-[#1c1917]" : "text-[#57534e] hover:text-[#1c1917]"
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              ))}
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button 
+          <div className="flex items-center gap-2 sm:gap-3">
+            <button
               onClick={() => setIsModalOpen(true)}
-              className="hidden md:flex items-center gap-3 bg-[#f5f5f4] border border-[#d6d3d1] hover:border-[#ff3e00] px-3 py-2 rounded-lg transition-all group shadow-sm"
+              aria-label="Search stories"
+              className="hidden md:flex items-center gap-3 bg-[#f5f5f4] border border-[#d6d3d1] hover:border-[#ff3e00] px-3 py-2 rounded-lg transition-colors group"
             >
-              <span className="material-symbols-outlined text-[18px] text-[#a8a29e] group-hover:text-[#ff3e00]">search</span>
-              <span className="text-[13px] font-medium text-[#57534e] group-hover:text-[#1c1917] pr-8 uppercase font-headline">Search intelligence...</span>
-              <div className="flex items-center gap-1">
+              <span className="material-symbols-outlined text-[18px] text-[#78716c] group-hover:text-[#c2410c]" aria-hidden="true">search</span>
+              <span className="text-[13px] text-[#57534e] group-hover:text-[#1c1917] pr-6">Search stories…</span>
+              <span className="flex items-center gap-1" aria-hidden="true">
                 <span className="modal-kbd">⌘</span>
                 <span className="modal-kbd">K</span>
-              </div>
+              </span>
             </button>
 
-            <button 
-              onClick={toggleSidebar}
-              className="flex items-center justify-center w-10 h-10 rounded-lg bg-white border border-[#d6d3d1] text-[#57534e] hover:text-[#ff3e00] hover:border-[#ff3e00] transition-all shadow-sm"
-              title="Toggle Sidebar"
+            <button
+              onClick={() => setIsModalOpen(true)}
+              aria-label="Search stories"
+              className="md:hidden flex items-center justify-center w-10 h-10 rounded-lg bg-white border border-[#d6d3d1] text-[#57534e] hover:text-[#c2410c] hover:border-[#ff3e00] transition-colors"
             >
-              <span className="material-symbols-outlined text-[20px]">side_navigation</span>
+              <span className="material-symbols-outlined text-[20px]" aria-hidden="true">search</span>
+            </button>
+
+            <button
+              onClick={toggleSidebar}
+              aria-label="Toggle social and signals panel"
+              title="Social & signals panel"
+              className="hidden lg:flex items-center justify-center w-10 h-10 rounded-lg bg-white border border-[#d6d3d1] text-[#57534e] hover:text-[#c2410c] hover:border-[#ff3e00] transition-colors"
+            >
+              <span className="material-symbols-outlined text-[20px]" aria-hidden="true">side_navigation</span>
             </button>
 
             {status === "authenticated" && session?.user ? (
               <div className="relative">
-                <button onClick={() => setShowMenu((s) => !s)} className="flex items-center gap-2 px-3 py-2 bg-white border border-[#d6d3d1] rounded-lg">
+                <button
+                  onClick={() => setShowMenu((s) => !s)}
+                  aria-label="Account menu"
+                  aria-expanded={showMenu}
+                  className="flex items-center gap-2 p-1.5 bg-white border border-[#d6d3d1] rounded-lg hover:border-[#ff3e00] transition-colors"
+                >
                   {session.user.image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={session.user.image} alt={session.user.name || "user"} className="w-7 h-7 rounded-full" />
+                    <img src={session.user.image} alt="" className="w-7 h-7 rounded-full" />
                   ) : (
-                    <div className="w-7 h-7 rounded-full bg-[#f5f5f4] flex items-center justify-center text-sm text-[#1c1917]">{(session.user.name || session.user.email || "U")[0]}</div>
+                    <span className="w-7 h-7 rounded-full bg-[#1c1917] text-white flex items-center justify-center text-[12px] font-semibold uppercase">{(session.user.name || session.user.email || "U")[0]}</span>
                   )}
                 </button>
                 {showMenu && (
-                  <div className="absolute right-0 mt-2 w-40 bg-white border border-[#d6d3d1] rounded-lg shadow-lg py-2 z-50">
-                    <Link href="/" className="block px-4 py-2 text-sm text-[#1c1917] hover:bg-[#f5f5f4]" onClick={() => setShowMenu(false)}>Home</Link>
-                    <Link href="/profile" className="block px-4 py-2 text-sm text-[#1c1917] hover:bg-[#f5f5f4]" onClick={() => setShowMenu(false)}>Profile</Link>
-                    <button onClick={() => { setShowMenu(false); signOut({ callbackUrl: "/" }); }} className="w-full text-left px-4 py-2 text-sm text-[#ef4444] hover:bg-[#fff5f5]">Sign out</button>
+                  <div className="absolute right-0 mt-2 w-48 bg-white border border-[#d6d3d1] rounded-xl shadow-lg py-2 z-50">
+                    <p className="px-4 pb-2 mb-1 border-b border-[#f5f5f4] text-[12px] text-[#78716c] truncate">{session.user.name || session.user.email}</p>
+                    <Link href="/profile" className="block px-4 py-2 text-sm text-[#1c1917] hover:bg-[#f5f5f4]" onClick={() => setShowMenu(false)}>Profile & friends</Link>
+                    <Link href="/bookmarks" className="block px-4 py-2 text-sm text-[#1c1917] hover:bg-[#f5f5f4]" onClick={() => setShowMenu(false)}>Saved stories</Link>
+                    <button onClick={() => { setShowMenu(false); signOut({ callbackUrl: "/" }); }} className="w-full text-left px-4 py-2 text-sm text-[#b91c1c] hover:bg-[#fef2f2]">Sign out</button>
                   </div>
                 )}
               </div>
@@ -221,29 +263,65 @@ export function Navbar() {
               <>
                 <Link
                   href="/sign-in"
-                  className="hidden md:flex items-center px-4 py-2 bg-white text-[#1c1917] border border-[#d6d3d1] text-[11px] font-headline font-bold uppercase tracking-widest rounded-lg hover:border-[#ff3e00] hover:text-[#ff3e00] transition-all shadow-sm"
+                  className="hidden md:flex items-center px-4 py-2 bg-white text-[#1c1917] border border-[#d6d3d1] text-[11px] font-headline font-bold uppercase tracking-widest rounded-lg hover:border-[#ff3e00] hover:text-[#c2410c] transition-colors"
                 >
-                  Sign In
+                  Sign in
                 </Link>
-
                 <Link
                   href="/sign-up"
-                  className="hidden md:flex items-center px-4 py-2 bg-[#1c1917] text-white text-[11px] font-headline font-bold uppercase tracking-widest rounded-lg hover:bg-[#ff3e00] transition-all shadow-sm"
+                  className="hidden md:flex items-center px-4 py-2 bg-[#1c1917] text-white text-[11px] font-headline font-bold uppercase tracking-widest rounded-lg hover:bg-[#ff3e00] transition-colors"
                 >
-                  Sign Up
+                  Sign up
                 </Link>
               </>
             )}
 
-            <Link 
+            <Link
               href="/live"
-              className="flex items-center gap-2 px-4 py-2 bg-[#ff3e00] text-white text-[11px] font-headline font-bold uppercase tracking-widest rounded-lg hover:bg-[#e03500] transition-all shadow-sm"
+              className="hidden sm:flex items-center gap-2 px-4 py-2 bg-[#ff3e00] text-white text-[11px] font-headline font-bold uppercase tracking-widest rounded-lg hover:bg-[#e03500] transition-colors"
             >
-              <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse shadow-[0_0_8px_white]"></span>
-              Live Feed
+              <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" aria-hidden="true"></span>
+              Live feed
             </Link>
+
+            <button
+              onClick={() => setMobileOpen((open) => !open)}
+              aria-label={mobileOpen ? "Close menu" : "Open menu"}
+              aria-expanded={mobileOpen}
+              aria-controls="mobile-menu"
+              className="lg:hidden flex items-center justify-center w-10 h-10 rounded-lg bg-white border border-[#d6d3d1] text-[#1c1917] hover:border-[#ff3e00] transition-colors"
+            >
+              <span className="material-symbols-outlined text-[22px]" aria-hidden="true">{mobileOpen ? "close" : "menu"}</span>
+            </button>
           </div>
         </div>
+
+        {mobileOpen && (
+          <div id="mobile-menu" className="lg:hidden border-t border-[#e7e5e4] bg-white px-4 pb-5 pt-3 shadow-lg">
+            <ul className="flex flex-col">
+              {[...NAV_LINKS, { href: "/live", label: "Live feed" }].map((link) => (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    aria-current={isActive(link.href) ? "page" : undefined}
+                    className={`flex items-center justify-between rounded-lg px-3 py-3 text-[15px] font-medium ${
+                      isActive(link.href) ? "bg-[#f5f5f4] text-[#1c1917]" : "text-[#44403c] hover:bg-[#fafaf9]"
+                    }`}
+                  >
+                    {link.label}
+                    <span className="material-symbols-outlined text-[18px] text-[#a8a29e]" aria-hidden="true">chevron_right</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            {status !== "authenticated" && (
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <Link href="/sign-in" className="flex items-center justify-center rounded-lg border border-[#d6d3d1] py-3 text-[13px] font-semibold text-[#1c1917]">Sign in</Link>
+                <Link href="/sign-up" className="flex items-center justify-center rounded-lg bg-[#1c1917] py-3 text-[13px] font-semibold text-white">Sign up</Link>
+              </div>
+            )}
+          </div>
+        )}
       </nav>
 
       {isModalOpen && (

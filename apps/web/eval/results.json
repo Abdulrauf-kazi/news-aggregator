@@ -1,0 +1,160 @@
+{
+  "provider": {
+    "provider": "local",
+    "space": "all-MiniLM-L6-v2"
+  },
+  "embedMs": 38,
+  "topicResults": {
+    "Legacy substring rules (before)": {
+      "accuracy": 0.25625,
+      "macroF1": 0.2572233524195174
+    },
+    "Word-boundary keyword rules": {
+      "accuracy": 0.5375,
+      "macroF1": 0.583800706585316
+    },
+    "Neural zero-shot (MiniLM prototypes)": {
+      "accuracy": 0.8625,
+      "macroF1": 0.865602518579563
+    },
+    "Hybrid (keyword if strength >= 1, else neural)": {
+      "accuracy": 0.88125,
+      "macroF1": 0.882474621722726
+    },
+    "Hybrid (keyword if strength >= 2, else neural)": {
+      "accuracy": 0.88125,
+      "macroF1": 0.882474621722726
+    },
+    "Hybrid (keyword if strength >= 3, else neural)": {
+      "accuracy": 0.88125,
+      "macroF1": 0.8835301915024281
+    },
+    "Hybrid (keyword if strength >= 4, else neural)": {
+      "accuracy": 0.88125,
+      "macroF1": 0.8835301915024281
+    },
+    "Trained MLP head (lib/models/topic-head.json)": {
+      "accuracy": 0.90625,
+      "macroF1": 0.9047350929554933
+    },
+    "Deployed ingestion pipeline (refineTopicsWithEmbeddings)": {
+      "accuracy": 0.90625,
+      "macroF1": 0.9047350929554933
+    }
+  },
+  "keywordCoverage": 0.54375,
+  "dedupe": {
+    "modelNumberVeto": {
+      "auc": 0.8611111111111112,
+      "bestF1": {
+        "threshold": 0.48,
+        "precision": 0.75,
+        "recall": 1,
+        "f": 0.8571428571428571
+      },
+      "bestF05": {
+        "threshold": 0.59,
+        "precision": 0.7878787878787878,
+        "recall": 0.8666666666666667,
+        "f": 0.8024691358024691
+      },
+      "deployed": {
+        "threshold": 0.58,
+        "precision": 0.7647058823529411,
+        "recall": 0.8666666666666667,
+        "f": 0.8125
+      },
+      "deployedF05": {
+        "threshold": 0.58,
+        "precision": 0.7647058823529411,
+        "recall": 0.8666666666666667,
+        "f": 0.7831325301204819
+      }
+    },
+    "modelNumberVetoEntity": {
+      "auc": 0.8722222222222222,
+      "bestF1": {
+        "threshold": 0.5,
+        "precision": 0.8181818181818182,
+        "recall": 0.9,
+        "f": 0.8571428571428572
+      },
+      "bestF05": {
+        "threshold": 0.5,
+        "precision": 0.8181818181818182,
+        "recall": 0.9,
+        "f": 0.8333333333333334
+      }
+    },
+    "model": {
+      "auc": 0.7555555555555555,
+      "at090": {
+        "threshold": 0.9,
+        "precision": 0,
+        "recall": 0,
+        "f": 0
+      },
+      "bestF1": {
+        "threshold": 0.48,
+        "precision": 0.6521739130434783,
+        "recall": 1,
+        "f": 0.7894736842105263
+      },
+      "bestF05": {
+        "threshold": 0.59,
+        "precision": 0.7027027027027027,
+        "recall": 0.8666666666666667,
+        "f": 0.7303370786516854
+      },
+      "meanPos": 0.6885358049057048,
+      "meanNeg": 0.5478287370547654
+    },
+    "lexical": {
+      "auc": 0.4161111111111111,
+      "at090": {
+        "threshold": 0.9,
+        "precision": 1,
+        "recall": 0,
+        "f": 0
+      },
+      "bestF1": {
+        "threshold": 0.32,
+        "precision": 0.45454545454545453,
+        "recall": 0.5,
+        "f": 0.47619047619047616
+      }
+    }
+  },
+  "searchResults": {
+    "Keyword only (before)": {
+      "recall5": 0.5277777777777778,
+      "mrr": 0.6769052706552706,
+      "ndcg10": 0.526764201009387,
+      "zeroResultRate": 0.05555555555555555
+    },
+    "Semantic only (MiniLM, min sim 0.3)": {
+      "recall5": 0.7870370370370371,
+      "mrr": 0.8611111111111112,
+      "ndcg10": 0.7912010462799604,
+      "zeroResultRate": 0.05555555555555555
+    },
+    "Hybrid 0.6·semantic + 0.4·keyword (min sim 0.2)": {
+      "recall5": 0.8564814814814815,
+      "mrr": 0.8796296296296295,
+      "ndcg10": 0.8286513530980568,
+      "zeroResultRate": 0
+    },
+    "Hybrid 0.6·semantic + 0.4·keyword (min sim 0.3)": {
+      "recall5": 0.8564814814814815,
+      "mrr": 0.9027777777777778,
+      "ndcg10": 0.8236695153476813,
+      "zeroResultRate": 0
+    },
+    "Hybrid 0.6·semantic + 0.4·keyword (min sim 0.4)": {
+      "recall5": 0.7407407407407408,
+      "mrr": 0.875,
+      "ndcg10": 0.7338253438309622,
+      "zeroResultRate": 0
+    }
+  }
+}

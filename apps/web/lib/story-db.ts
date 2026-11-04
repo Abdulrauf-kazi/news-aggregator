@@ -2,6 +2,7 @@ import type { StoryNode } from "./graph";
 import { getJsonArray, storeJsonArray } from "./redis";
 import { getDb } from "./mongodb";
 import { isSyntheticStory } from "./story-quality";
+import { withDemoStories } from "./demo-news";
 
 const STORY_DB_KEY = "news:db:stories";
 const SOURCE_METRICS_DB_KEY = "news:db:source-metrics";
@@ -12,7 +13,7 @@ export type SourceIngestionMetric = {
   sourceLabel: string;
   endpoint: string;
   ok: boolean;
-  mode: "live" | "fallback" | "google-news-fallback";
+  mode: "live" | "fallback" | "google-news-fallback" | "generated";
   storyCount: number;
   error?: string;
   lastFetchedAt: string;
@@ -30,7 +31,7 @@ export type IngestionRunReport = {
     sourceId: string;
     sourceLabel: string;
     endpoint: string;
-    mode: "live" | "fallback" | "google-news-fallback";
+    mode: "live" | "fallback" | "google-news-fallback" | "generated";
     fetchedStories: number;
     canonicalStories: number;
     error?: string;
@@ -42,7 +43,13 @@ const toTimestamp = (value: string) => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
+/** Stories as readers see them: stored stories plus the demo generator's current ones. */
 export async function readStoredStories(): Promise<StoryNode[]> {
+  return withDemoStories(await readRawStoredStories());
+}
+
+/** Only what ingestion stored in the `stories` collection (no generated stories). */
+export async function readRawStoredStories(): Promise<StoryNode[]> {
   const cached = await getJsonArray<StoryNode>(STORY_DB_KEY);
   if (cached && cached.length > 0) {
     return cached
@@ -73,7 +80,8 @@ export async function mergeAndStoreStories(
   incomingStories: StoryNode[],
   maxStories = 800,
 ): Promise<StoryNode[]> {
-  const existingStories = await readStoredStories();
+  // Raw read: generated demo stories must never be copied into `stories`.
+  const existingStories = await readRawStoredStories();
   const hasRealIncomingStory = incomingStories.some((story) => !isSyntheticStory(story));
   const filteredExistingStories = hasRealIncomingStory
     ? existingStories.filter((story) => !isSyntheticStory(story))

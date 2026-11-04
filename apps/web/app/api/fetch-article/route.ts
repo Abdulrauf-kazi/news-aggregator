@@ -1,5 +1,26 @@
 import { NextResponse } from 'next/server';
-import * as cheerio from 'cheerio';
+import { cleanArticleElement, extractFallbackArticle, type CleanedArticle } from '../../../lib/article-cleanup';
+
+/** Below this much body text the page is treated as a teaser, not the full article. */
+const FULL_TEXT_MIN_CHARS = 600;
+const MAX_HTML_BYTES = 5_000_000;
+
+type ArticleStatus = 'ok' | 'short' | 'empty' | 'not-html' | 'too-large' | 'error';
+
+const failure = (targetUrl: string, status: ArticleStatus, error: string) =>
+  NextResponse.json({
+    status,
+    text: '',
+    html: '',
+    textLength: 0,
+    imageUrl: '',
+    siteName: '',
+    author: '',
+    publishedDate: '',
+    readingTime: 0,
+    finalUrl: targetUrl,
+    error,
+  });
 
 export async function GET(request: Request) {
   const { JSDOM } = await import('jsdom');
@@ -33,33 +54,43 @@ export async function GET(request: Request) {
       signal: controller.signal,
       redirect: 'follow',
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      return failure(targetUrl, 'error', `HTTP ${response.status}`);
     }
-    
+
+    // Images, PDFs and JSON APIs used to be parsed as HTML and shown as garbage.
+    const contentType = response.headers.get('content-type') ?? '';
+    if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) {
+      return failure(targetUrl, 'not-html', `Not an article page (${contentType.split(';')[0]})`);
+    }
+    const declaredLength = Number(response.headers.get('content-length') ?? 0);
+    if (declaredLength > MAX_HTML_BYTES) {
+      return failure(targetUrl, 'too-large', 'Page too large to extract');
+    }
+
     const finalUrl = response.url || targetUrl;
-    const html = await response.text();
-    
+    const html = (await response.text()).slice(0, MAX_HTML_BYTES);
+
     const dom = new JSDOM(html, { url: finalUrl });
     const doc = dom.window.document;
-    
+
     const metaTags = doc.getElementsByTagName('meta');
     let imageUrl = '';
     let siteName = '';
     let description = '';
     let author = '';
     let publishedDate = '';
-    
+
     for (let i = 0; i < metaTags.length; i++) {
       const tag = metaTags[i];
       if (!tag) continue;
       const property = tag.getAttribute('property') || '';
       const name = tag.getAttribute('name') || '';
       const content = tag.getAttribute('content') || '';
-      
+
       if ((property === 'og:image' || name === 'twitter:image') && !imageUrl) {
         imageUrl = content;
       }
@@ -83,8 +114,8 @@ export async function GET(request: Request) {
         try {
           const ld = JSON.parse(script.textContent || '');
           if (ld.author) {
-            author = typeof ld.author === 'string' 
-              ? ld.author 
+            author = typeof ld.author === 'string'
+              ? ld.author
               : (ld.author.name || (Array.isArray(ld.author) ? ld.author[0]?.name : ''));
           }
           if (ld.datePublished && !publishedDate) {
@@ -95,116 +126,40 @@ export async function GET(request: Request) {
         }
       }
     }
+    // An author URL ("https://…/people/x") is not a byline.
+    if (/^https?:\/\//i.test(author)) author = '';
 
-    // STRATEGY 1: Mozilla Readability (best for clean article extraction)
-    const reader = new Readability(doc);
-    const article = reader.parse();
-
-    // STRATEGY 2: Cheerio fallback for structured content extraction
-    let cheerioContent = '';
-    let cheerioTitle = '';
-    if (!article) {
-      const $ = cheerio.load(html);
-      
-      // Remove non-content elements
-      $('script, style, nav, header, footer, iframe, noscript, .ad, .ads, .advertisement, .sidebar, .comments, .related, .newsletter, .subscription, .cookie-banner, .popup, .modal').remove();
-      
-      // Try to find main content area
-      const contentSelectors = [
-        'article',
-        '[role="main"]',
-        '.article-body',
-        '.article-content',
-        '.post-content',
-        '.entry-content',
-        '.story-body',
-        '.content-body',
-        '.article-text',
-        '.article__body',
-        '.post-body',
-        '.content__body',
-        '#articleBody',
-        '.main-content',
-        '.content',
-        'main',
-        '.post',
-        '.story',
-        '.news-item',
-      ];
-      
-      let $content: cheerio.Cheerio<any> | null = null;
-      for (const selector of contentSelectors) {
-        const $el = $(selector).first();
-        if ($el.length > 0 && $el.text().trim().length > 200) {
-          $content = $el;
-          break;
-        }
-      }
-      
-      // Fallback: use body if no specific content area found
-      if (!$content) {
-        $content = $('body');
-      }
-      
-      // Extract paragraphs with minimum length
-      const paragraphs: string[] = [];
-      $content.find('p, div, li, td, h2, h3').each((_, el) => {
-        const text = $(el).text().trim();
-        if (text.length > 50 && !paragraphs.includes(text)) {
-          paragraphs.push(text);
-        }
+    // 1. Readability finds the article container; 2. the cleaner strips the
+    // bylines, credits, player messages, promos and repeats it leaves behind.
+    // Readability mutates the document, so the fallback gets a fresh parse.
+    const pageTitle = doc.title || '';
+    const article = new Readability(new JSDOM(html, { url: finalUrl }).window.document).parse();
+    let cleaned: CleanedArticle | null = null;
+    if (article?.content) {
+      const fragment = new JSDOM(`<!doctype html><body>${article.content}</body>`).window.document;
+      cleaned = cleanArticleElement(fragment.body, { title: article.title || pageTitle });
+    }
+    // 3. Readability found nothing usable: rebuild from the page's own paragraphs.
+    if (!cleaned || cleaned.textLength < 200) {
+      const fallback = extractFallbackArticle(new JSDOM(html, { url: finalUrl }).window.document, {
+        title: article?.title || pageTitle,
       });
-      
-      if (paragraphs.length > 0) {
-        cheerioContent = paragraphs.map(p => `<p>${p}</p>`).join('\n');
-      }
-      
-      // Extract title if Readability failed
-      cheerioTitle = $('h1').first().text().trim() || $('title').text().trim();
+      if (fallback.textLength > (cleaned?.textLength ?? 0)) cleaned = fallback;
     }
 
-    // STRATEGY 3: Extract all meaningful text as last resort
-    let fallbackText = '';
-    if (!article && !cheerioContent) {
-      const textNodes = doc.querySelectorAll('p, div, span, li, td, h2, h3');
-      const textParts: string[] = [];
-      for (const node of Array.from(textNodes)) {
-        const text = node.textContent?.trim();
-        if (text && text.length > 80 && text.length < 2000) {
-          textParts.push(text);
-        }
-      }
-      // Deduplicate and take top chunks
-      const unique = Array.from(new Set(textParts)).slice(0, 20);
-      fallbackText = unique.map(t => `<p>${t}</p>`).join('\n');
-    }
-
-    // STRATEGY 4: If still no content, use description or page title as content
-    if (!article && !cheerioContent && !fallbackText) {
-      if (description) {
-        fallbackText = `<p>${description}</p>`;
-      } else {
-        const pageTitle = doc.title || '';
-        if (pageTitle) {
-          fallbackText = `<p>${pageTitle}</p><p>Content from ${finalUrl}</p>`;
-        }
-      }
-    }
-
-    const finalHtml = article?.content || cheerioContent || fallbackText;
-    const finalTitle = article?.title || cheerioTitle || doc.title || '';
-    const finalText = article?.textContent || '';
-    
-    const wordCount = finalText.split(/\s+/).filter(Boolean).length;
+    const text = cleaned?.text ?? '';
+    const textLength = cleaned?.textLength ?? 0;
+    const status: ArticleStatus = textLength >= FULL_TEXT_MIN_CHARS ? 'ok' : textLength > 0 ? 'short' : 'empty';
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
     const readingTime = Math.max(1, Math.ceil(wordCount / 238));
-    
-    const cleanHtml = enhanceArticleHtml(finalHtml);
-    
-    return NextResponse.json({ 
-      text: finalText,
-      html: cleanHtml,
-      title: finalTitle,
-      byline: article?.byline || author,
+
+    return NextResponse.json({
+      status,
+      text,
+      html: enhanceArticleHtml(cleaned?.html ?? ''),
+      textLength,
+      title: article?.title || pageTitle,
+      byline: (article?.byline && !/^https?:\/\//i.test(article.byline) ? article.byline : '') || author,
       siteName: article?.siteName || siteName,
       imageUrl,
       author,
@@ -212,53 +167,21 @@ export async function GET(request: Request) {
       readingTime,
       wordCount,
       finalUrl,
-      description
+      description,
+      ...(status === 'ok' ? {} : { error: status === 'empty' ? 'No article text found on the page' : 'Only a short excerpt was found on the page' }),
     });
-  } catch (error: any) {
-    console.error('Error fetching article:', error?.message || error);
-    return NextResponse.json({ 
-      text: '', 
-      html: '', 
-      imageUrl: '',
-      siteName: '',
-      author: '',
-      publishedDate: '',
-      readingTime: 0,
-      finalUrl: targetUrl,
-      error: error?.message || 'Failed to fetch article'
-    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch article';
+    console.error('Error fetching article:', message);
+    return failure(targetUrl, 'error', message);
   }
 }
 
-/**
- * Enhance the raw Readability HTML for better Medium-like rendering.
- * Strips empty elements, adds figure captions, etc.
- */
+/** Tags blockquotes for styling (images are already wrapped in figures by the cleaner). */
 function enhanceArticleHtml(html: string): string {
-  // Remove empty paragraphs
-  let enhanced = html.replace(/<p>\s*<\/p>/gi, '');
-  
-  // Wrap standalone images in figure tags if not already
-  enhanced = enhanced.replace(
-    /<img([^>]+)(?:\/>|>)(?!\s*<\/figure>)/gi, 
-    '<figure class="article-figure"><img$1 loading="lazy" /></figure>'
-  );
-  
-  // Don't double-wrap figures
-  enhanced = enhanced.replace(
-    /<figure[^>]*>\s*<figure[^>]*>/gi,
-    '<figure class="article-figure">'
-  );
-  enhanced = enhanced.replace(
-    /<\/figure>\s*<\/figure>/gi,
-    '</figure>'
-  );
-  
-  // Add class to blockquotes for styling
-  enhanced = enhanced.replace(
-    /<blockquote>/gi,
-    '<blockquote class="article-blockquote">'
-  );
-  
-  return enhanced;
+  if (!html) return '';
+  return html
+    .replace(/<p>\s*<\/p>/gi, '')
+    .replace(/<figure>/gi, '<figure class="article-figure">')
+    .replace(/<blockquote>/gi, '<blockquote class="article-blockquote">');
 }

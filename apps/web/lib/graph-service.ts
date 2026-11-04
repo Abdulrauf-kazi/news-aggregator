@@ -4,6 +4,7 @@ import { buildLiveGraph } from "./source-adapters";
 import { cacheJson, getCachedJson } from "./redis";
 import { readSourceMetrics, readStoredStories } from "./story-db";
 import { isSyntheticStory } from "./story-quality";
+import { getDemoGeneration, noteDemoActivity } from "./demo-news";
 import { ensureVectorStore, queryTopKSimilarStories } from "./vector-store";
 import {
   getSessionRecentStories,
@@ -47,24 +48,12 @@ export type GraphSnapshot = StoryGraph & {
       vectorBackend: string;
       vectorCount: number;
       graphSeedCount: number;
-      mode: "vector+graph" | "graph" | "vector+graph+social";
+      mode: "vector+graph" | "graph" | "vector+graph+social" | "graph+social";
     };
   };
 };
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
-
-const calculateRecencyScore = (timestamp: string): number => {
-  const publishedMs = Date.parse(timestamp);
-  if (Number.isNaN(publishedMs)) {
-    return 0;
-  }
-  const ageMs = Math.max(0, Date.now() - publishedMs);
-  const ageHours = ageMs / (1000 * 60 * 60);
-  const halfLifeHours = 12;
-  const score = Math.exp((-Math.log(2) * ageHours) / halfLifeHours);
-  return clamp01(score);
-};
 
 const calculateAgeHours = (timestamp: string) => {
   const publishedMs = Date.parse(timestamp);
@@ -91,18 +80,17 @@ const shouldBypassStoredStories = (stories: StoryGraph["stories"]) => {
 const filterSyntheticStories = (stories: StoryGraph["stories"]) =>
   stories.filter((story) => !isSyntheticStory(story));
 
-const calculateDecayedTrendScore = (input: {
-  score: number;
-  timestamp: string;
-}) => {
-  const ageHours = calculateAgeHours(input.timestamp);
+// Time enters ranking exactly once, via recency. (Previously the trend score was
+// also time-decayed, so freshness was double-counted.)
+const calculateRecencyScore = (timestamp: string): number => {
+  const ageHours = calculateAgeHours(timestamp);
   if (!Number.isFinite(ageHours)) {
     return 0;
   }
-
-  const decayedScore = input.score * Math.exp(-TIME_DECAY_LAMBDA * ageHours);
-  return clamp01(decayedScore / 100);
+  return clamp01(Math.exp(-TIME_DECAY_LAMBDA * ageHours));
 };
+
+const calculateTrendScore = (score: number) => clamp01(score / 100);
 
 const shuffle = <T>(items: T[]) => {
   const copy = items.slice();
@@ -385,7 +373,9 @@ const buildRetrievalRecommendations = async (input: {
           ? ("vector+graph+social" as const)
           : hasVector
             ? ("vector+graph" as const)
-            : ("graph" as const),
+            : hasSocial
+              ? ("graph+social" as const)
+              : ("graph" as const),
     },
   };
 };
@@ -409,35 +399,30 @@ const rankGraphByScores = async (input: {
 
   const hasSocialSignal = Object.keys(socialRelevance).length > 0;
 
+  // 4-factor weighted ranking when social signal is available,
+  // otherwise 3-factor ranking. Scores are computed once per story so the
+  // comparator is consistent (Date.now() no longer moves mid-sort).
+  const totalScore = new Map<string, number>();
+  for (const story of input.graph.stories) {
+    const trend = calculateTrendScore(story.score);
+    const recency = calculateRecencyScore(story.timestamp);
+    const session = sessionRelevance[story.id] ?? 0;
+    const social = socialRelevance[story.id] ?? 0;
+    totalScore.set(
+      story.id,
+      hasSocialSignal
+        ? 0.4 * trend + 0.25 * recency + 0.15 * session + 0.2 * social
+        : 0.5 * trend + 0.3 * recency + 0.2 * session,
+    );
+  }
+
   const rankedStories = input.graph.stories.slice().sort((a, b) => {
-    const trendA = calculateDecayedTrendScore({
-      score: a.score,
-      timestamp: a.timestamp,
-    });
-    const trendB = calculateDecayedTrendScore({
-      score: b.score,
-      timestamp: b.timestamp,
-    });
-    const recencyA = calculateRecencyScore(a.timestamp);
-    const recencyB = calculateRecencyScore(b.timestamp);
-    const sessionA = sessionRelevance[a.id] ?? 0;
-    const sessionB = sessionRelevance[b.id] ?? 0;
-    const socialA = socialRelevance[a.id] ?? 0;
-    const socialB = socialRelevance[b.id] ?? 0;
-
-    // 4-factor weighted ranking when social signal is available
-    // Otherwise fall back to 3-factor ranking
-    const totalA = hasSocialSignal
-      ? 0.40 * trendA + 0.25 * recencyA + 0.15 * sessionA + 0.20 * socialA
-      : 0.50 * trendA + 0.30 * recencyA + 0.20 * sessionA;
-    const totalB = hasSocialSignal
-      ? 0.40 * trendB + 0.25 * recencyB + 0.15 * sessionB + 0.20 * socialB
-      : 0.50 * trendB + 0.30 * recencyB + 0.20 * sessionB;
-
+    const totalA = totalScore.get(a.id) ?? 0;
+    const totalB = totalScore.get(b.id) ?? 0;
     if (totalA !== totalB) {
       return totalB - totalA;
     }
-    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    return Date.parse(b.timestamp) - Date.parse(a.timestamp);
   });
 
   const explorationRankedStories = applyExplorationInjection(rankedStories);
@@ -530,15 +515,20 @@ export async function getGraphSnapshot(options?: {
   sessionId?: string;
   userId?: string;
 }): Promise<GraphSnapshot> {
+  noteDemoActivity();
   const recentSessionStories = await getSessionRecentStories(
     options?.sessionId,
   );
 
   const cached = options?.forceRefresh
     ? null
-    : await getCachedJson<StoryGraph>(GRAPH_CACHE_KEY);
+    : await getCachedJson<StoryGraph & { demoGeneration?: string }>(GRAPH_CACHE_KEY);
+  // A cached graph built before the latest demo-news cycle still holds the
+  // previous (deleted) generated stories, so it is treated as a cache miss.
+  const cachedIsCurrent =
+    !!cached && (cached.demoGeneration ?? "disabled") === (await getDemoGeneration());
 
-  if (cached && cached.stories.length > 0 && !shouldBypassStoredStories(cached.stories)) {
+  if (cached && cachedIsCurrent && cached.stories.length > 0 && !shouldBypassStoredStories(cached.stories)) {
     const [stories, metrics] = await Promise.all([
       readStoredStories(),
       readSourceMetrics(),
